@@ -1,0 +1,13 @@
+{
+  "name": "stroop-paradox-untag",
+  "version": "1.0.0",
+  "description": "V-A-K Cognitive Assessment Photobooth for Dies Natalis UNTAG Surabaya 2026",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "local": "node server.js --no-tunnel"
+  },
+  "keywords": ["photobooth", "untag", "dies-natalis", "cognitive"],
+  "author": "UNTAG Surabaya",
+  "license": "MIT"
+}

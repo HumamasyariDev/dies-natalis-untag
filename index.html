@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stroop's Paradox — V-A-K Cognitive Assessment</title>
+  <meta name="color-scheme" content="dark" />
+
+  <!-- Fonts: Archivo Black + Plus Jakarta Sans + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+            body: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            crimson: { 500: '#f43f5e', 600: '#e11d48', 700: '#be123c' },
+            sun: { 400: '#fde047', 500: '#fbbf24', 600: '#d97706' },
+            dusk: { 900: '#0a0407', 800: '#14080e', 700: '#1e0c15' },
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- MediaPipe Hands + QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <link rel="stylesheet" href="styles/base.css?v=98" />
+  <link rel="stylesheet" href="styles/lobby.css?v=98" />
+  <link rel="stylesheet" href="styles/calib.css?v=98" />
+  <link rel="stylesheet" href="styles/game.css?v=98" />
+</head>
+<body class="bg-[#faf8f2] text-zinc-900 font-body overflow-hidden select-none">
+
+  <div class="bg-dusk"></div>
+  <div class="dusk-vignette"></div>
+
+  <video id="webcam" class="cam-feed" playsinline muted autoplay></video>
+  <canvas id="fx" class="fixed inset-0 w-full h-full pointer-events-none z-10"></canvas>
+
+  <header id="hud" class="fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-3 px-5 py-2.5 hidden">
+    <!-- Brand logo gaya /stroop + Logo UNTAG Surabaya -->
+    <div class="brand-pill flex items-center gap-2.5 shrink-0">
+      <img src="assets/logo-untag.png" alt="UNTAG Surabaya" class="w-9 h-9 md:w-10 md:h-10 object-contain drop-shadow-[1px_1px_0_#111113]" />
+      <div class="brand-badge text-base md:text-lg">
+        <span>/</span>stroop
+      </div>
+      <span class="text-[11px] font-mono text-[#dc2626] font-extrabold border-l-2 border-zinc-900/20 pl-2.5 hidden sm:inline whitespace-nowrap">UNTAG SURABAYA</span>
+    </div>
+
+    <!-- Stepper progres tahap -->
+    <ol id="stepper" class="hidden lg:flex items-center gap-1 font-mono text-[11px]">
+      <li data-step="1" class="step">01 KALIBRASI</li>
+      <li data-step="2" class="step">02 VISUAL</li>
+      <li data-step="3" class="step">03 AUDITORI</li>
+      <li data-step="4" class="step">04 KINESTETIK</li>
+      <li data-step="5" class="step">05 HASIL</li>
+    </ol>
+
+    <!-- Kontrol Audio (Mentok hanya BGM) -->
+    <div class="flex items-center gap-2 font-mono text-[11px] shrink-0">
+      <button id="btn-hud-bgm" type="button" class="chip bg-[#fde047] hover:bg-[#ef4444] hover:text-white font-bold cursor-pointer whitespace-nowrap">
+        <span>♪</span>
+        <span class="bgm-label-sync">BGM: ON</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Banner controller belum terhubung -->
+  <div id="pad-banner" class="fixed top-16 inset-x-0 z-40 flex justify-center hidden pointer-events-none">
+    <div class="calib-card font-mono text-xs font-bold px-4 py-1.5 bg-[#fde047]">
+      Tekan tombol apa saja di controller PS3 untuk menghubungkan
+    </div>
+  </div>
+
+  <!-- ===== LAYER UTAMA: LAYAR-LAYAR ===== -->
+  <main class="relative z-20 w-screen h-screen flex items-center justify-center">
+
+    <!-- BOOT (HERO SCREEN) -->
+    <section data-screen="boot" class="screen active">
+      <div class="w-full h-full flex flex-col justify-between px-6 md:px-12 py-3 md:py-4 max-w-6xl mx-auto z-20">
+
+        <!-- Top Navigation Bar -->
+        <header class="flex items-center justify-between shrink-0">
+          <div class="flex items-center px-4 py-1.5 bg-white rounded-full border-2 border-zinc-900 shadow-[2px_2px_0_#111113]">
+            <div class="brand-badge text-base md:text-lg"><span>/</span>stroop</div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="btn-bgm" type="button" class="flex items-center gap-1.5 font-mono text-[11px] font-bold bg-[#fbbf24] hover:bg-[#ef4444] hover:text-white px-3 py-1.5 rounded-full border-2 border-zinc-900 shadow-[2px_2px_0_#111113] transition-colors cursor-pointer whitespace-nowrap">
+              <span id="bgm-icon">♪</span>
+              <span id="bgm-label">BGM: ON</span>
+            </button>
+            <div class="hidden sm:flex items-center gap-2 font-mono text-[11px] font-extrabold bg-white px-3.5 py-1.5 rounded-full border-2 border-zinc-900 shadow-[2px_2px_0_#111113] whitespace-nowrap">
+              <span>V · A · K</span>
+              <span class="text-zinc-400">|</span>
+              <span class="text-[#dc2626]">UNTAG SURABAYA</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- Center Hero Section -->
+        <div class="flex flex-col items-center text-center my-auto py-1 relative">
+          <!-- UNTAG Logo Showcase (Significantly Enlarged, Glowing & Proud) -->
+          <div class="relative inline-flex flex-col items-center mb-1.5">
+            <div class="relative cursor-pointer mb-2">
+              <img src="assets/logo-untag.png" alt="Logo UNTAG Surabaya" class="untag-emblem-glow w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 object-contain" />
+              <span class="absolute -top-3 -right-4 text-3xl cute-float select-none" title="UNTAG Surabaya">✨</span>
+            </div>
+            <div class="inline-flex items-center gap-2 font-mono text-xs sm:text-sm font-black tracking-[0.16em] uppercase bg-[#dc2626] text-white px-4.5 py-1.5 rounded-full border-2 border-zinc-900 shadow-[3px_3px_0_#111113] -rotate-1">
+              <span>★</span>
+              <span>Lab Psikologi Kognitif · UNTAG Surabaya</span>
+            </div>
+          </div>
+
+          <!-- Title STROOP'S PARADOX (Enlarged) + Circular Stamp -->
+          <div class="relative inline-flex flex-col items-center">
+            <h1 class="sr-only">Stroop's Paradox</h1>
+            <div class="hero-word hero-word-blue text-6xl sm:text-7xl md:text-8xl">STROOP'S</div>
+            <div class="hero-word hero-word-yellow text-6xl sm:text-7xl md:text-8xl mt-0.5">PARADOX</div>
+
+            <!-- Stempel Lingkaran "GO / V-A-K" di samping judul -->
+            <button type="button" onclick="document.getElementById('btn-boot').click()" class="stamp-circle hidden md:grid absolute -right-28 lg:-right-32 top-1/2 -translate-y-1/2 font-mono" title="Mulai Tes">
+              <div class="leading-tight">
+                <div class="text-[10px] font-bold tracking-widest uppercase text-[#dc2626]">V · A · K</div>
+                <div class="text-xl md:text-2xl font-black font-display">GO</div>
+                <div class="text-[10px] font-bold tracking-widest uppercase">TEST</div>
+              </div>
+            </button>
+          </div>
+
+          <!-- Subtitle -->
+          <p class="mt-3 text-zinc-900 text-sm sm:text-base font-bold max-w-xl leading-relaxed bg-white/95 px-5 py-2 rounded-xl border-2 border-zinc-900 shadow-[3px_3px_0_#111113] text-balance">
+            Uji benturan stimulus visual, auditori, dan kinestetik untuk mengungkap modalitas gaya belajar aslimu.
+          </p>
+
+          <!-- Primary CTA Button -->
+          <div class="flex flex-col items-center mt-3.5 mb-1">
+            <button id="btn-boot" class="cmd-pill group">
+              <span class="flex items-center gap-3">
+                <span class="text-[#dc2626] font-extrabold font-mono text-lg group-hover:translate-x-0.5 transition-transform">❯</span>
+                <span class="text-zinc-900 font-extrabold tracking-wide text-sm sm:text-base md:text-lg">Mulai Eksperimen Kognitif</span>
+              </span>
+              <span class="cmd-icon group-hover:scale-105 transition-transform">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </span>
+            </button>
+            <p id="boot-status" class="font-mono text-xs text-white font-bold mt-1.5 h-3.5 drop-shadow-[1px_1px_0_#111113]"></p>
+          </div>
+        </div>
+
+        <!-- Bottom 3-Card Modality Pipeline (Non-Overflowing, Balanced & Clean) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 pb-4 md:pb-6 w-full shrink-0">
+          <!-- Card 1 -->
+          <div class="lobby-pipeline-card p-3 md:p-3.5 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono text-[10px] font-extrabold text-[#dc2626] uppercase tracking-wider">01 · VISUAL STROOP</span>
+              <span class="font-mono text-[9px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded border border-red-300">Gamepad PS3</span>
+            </div>
+            <h3 class="font-bold text-zinc-900 text-xs sm:text-sm">Inhibisi Kata &amp; Warna</h3>
+            <p class="text-[11px] sm:text-xs text-zinc-600 font-medium mt-0.5 leading-snug">
+              Seleksi warna tinta visual saat bertabrakan dengan semantik kata inkongruen.
+            </p>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="lobby-pipeline-card p-3 md:p-3.5 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono text-[10px] font-extrabold text-[#d97706] uppercase tracking-wider">02 · AUDITORI STROOP</span>
+              <span class="font-mono text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded border border-amber-300">Audio Binaural</span>
+            </div>
+            <h3 class="font-bold text-zinc-900 text-xs sm:text-sm">Interferensi Nada Suara</h3>
+            <p class="text-[11px] sm:text-xs text-zinc-600 font-medium mt-0.5 leading-snug">
+              Uji respons pendengaran saat nada vokal tinggi/rendah berlawanan dengan arti kata.
+            </p>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="lobby-pipeline-card p-3 md:p-3.5 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono text-[10px] font-extrabold text-[#0284c7] uppercase tracking-wider">03 · KINESTETIK 3D</span>
+              <span class="font-mono text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded border border-sky-300">Pose Tracking</span>
+            </div>
+            <h3 class="font-bold text-zinc-900 text-xs sm:text-sm">Subway Surfers Spatial</h3>
+            <p class="text-[11px] sm:text-xs text-zinc-600 font-medium mt-0.5 leading-snug">
+              Refleks motorik seluruh tubuh: merunduk, melompat, dan bermanuver di rintangan 3D.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAHAP 1: KALIBRASI TANGAN -->
+    <section data-screen="calib" class="screen">
+      <!-- Header Tipografi Atas (Kiri: Judul & Status, Kanan: Tinta & Hapus) -->
+      <div class="absolute top-16 inset-x-0 px-6 md:px-10 pt-2 flex flex-wrap items-start justify-between gap-4 pointer-events-none">
+        <div class="flex flex-col items-start gap-1.5">
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[10px] font-bold tracking-[0.2em] uppercase bg-[#fde047] text-zinc-900 px-2.5 py-0.5 rounded border-2 border-zinc-900 shadow-[2px_2px_0_#111113]">
+              01 / Air Signature
+            </span>
+            <div id="gesture-badge" class="calib-card font-mono text-[11px] font-bold px-3 py-0.5 transition-colors">
+              Tangan belum terdeteksi
+            </div>
+          </div>
+          <h2 id="calib-title" class="calib-headline text-2xl sm:text-3xl md:text-4xl">
+            Gambar Inisialmu
+          </h2>
+        </div>
+
+        <div class="flex items-center gap-2 pointer-events-auto">
+          <div class="calib-card flex items-center gap-2.5 px-3 py-1.5 font-mono text-xs">
+            <span class="text-zinc-600 font-bold tracking-wider">TINTA</span>
+            <div class="w-20 h-2 bg-zinc-200 rounded-sm overflow-hidden border border-zinc-900">
+              <div id="ink-bar" class="h-full w-0 bg-[#38bdf8] transition-all duration-150"></div>
+            </div>
+            <span id="ink-pct" class="text-zinc-900 font-bold w-8 text-right tabular-nums">0%</span>
+          </div>
+          <button id="btn-clear-ink" class="calib-card font-mono text-xs px-3 py-1.5 bg-[#fde047] hover:bg-[#fb923c] font-bold transition-colors cursor-pointer">
+            Hapus [C]
+          </button>
+        </div>
+      </div>
+
+      <!-- Photobooth Viewfinder Frame (muncul saat siap foto) -->
+      <div id="calib-viewfinder" class="calib-viewfinder flex flex-col items-center justify-between py-4">
+        <div class="vf-corner vf-tl"></div>
+        <div class="vf-corner vf-tr"></div>
+        <div class="vf-corner vf-bl"></div>
+        <div class="vf-corner vf-br"></div>
+        <span class="font-mono text-[11px] font-black uppercase tracking-widest bg-[#fde047] text-zinc-900 px-3 py-1 rounded-full border-2 border-zinc-900 shadow-[2px_2px_0_#111113]">
+          POSISI WAJAH · SENYUM
+        </span>
+        <div id="calib-photo-count" class="vf-count opacity-0">3</div>
+        <span class="font-mono text-[10px] font-bold uppercase tracking-wider bg-white/95 text-zinc-900 px-2.5 py-0.5 rounded border-2 border-zinc-900">
+          TAHAN KEPALAN UNTUK JEPRET
+        </span>
+      </div>
+
+      <!-- ID Card Preview & Konfirmasi Foto (Bisa Foto Ulang di Awal) -->
+      <div id="calib-id-preview" class="hidden fixed inset-0 z-40 bg-zinc-950/60 flex items-center justify-center p-4">
+        <div class="id-preview-card max-w-md w-full overflow-hidden">
+          <div class="bg-[#dc2626] text-white px-5 py-3 border-b-[3px] border-zinc-900 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <img src="assets/logo-untag.png" alt="" class="w-6 h-6 object-contain" />
+              <span class="font-mono text-xs font-black tracking-wider uppercase">ID CARD TERBIT!</span>
+            </div>
+            <span id="calib-preview-serial" class="font-mono text-xs font-black bg-[#fde047] text-zinc-900 px-2.5 py-0.5 rounded-full border-2 border-zinc-900">#VAK-000</span>
+          </div>
+          <div class="p-5 bg-[#fffdf7]">
+            <div class="flex items-center gap-4">
+              <div class="w-28 aspect-[4/5] shrink-0 rounded-xl border-[2.5px] border-zinc-900 overflow-hidden bg-zinc-200 shadow-[4px_4px_0_#111113]">
+                <img id="calib-preview-photo" alt="Foto peserta" class="hidden w-full h-full object-cover" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-500">Tanda Tangan Udara</p>
+                <div class="mt-1.5 h-16 bg-white border-2 border-zinc-900 rounded-lg flex items-center justify-center p-1.5 overflow-hidden">
+                  <img id="calib-preview-sig" alt="Inisial peserta" class="hidden max-h-full max-w-full object-contain" />
+                </div>
+                <p class="font-mono text-[11px] font-extrabold text-[#16a34a] mt-2.5">✓ Profil siap masuk arena!</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mt-5">
+              <button id="btn-calib-retake" type="button" class="id-action-btn bg-white hover:bg-zinc-100 text-zinc-900 w-full">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+                </svg>
+                <span>FOTO ULANG</span>
+              </button>
+              <button id="btn-calib-confirm" type="button" class="id-action-btn bg-[#fde047] hover:bg-[#fbbf24] text-zinc-900 w-full">
+                <span>LANJUT ARENA →</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bar Bawah: Kiri Legenda Gestur, Kanan Progres Kepalan -->
+      <div class="absolute bottom-5 inset-x-0 px-6 md:px-10 flex flex-wrap items-end justify-between gap-4 pointer-events-none">
+        <div id="calib-sub" class="calib-card px-3.5 py-2 font-mono text-[11px] flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span><b class="text-[#0284c7]">1 Jari</b> Gambar</span>
+          <span><b>2+ Jari</b> Jeda</span>
+          <span><b class="text-[#ea580c]">Cubit</b> Geser</span>
+          <span><b class="text-zinc-700">5 Jari</b> Hapus</span>
+        </div>
+
+        <div id="fist-box" class="calib-card px-4 py-2.5 flex flex-col gap-1.5 min-w-[240px] opacity-0 transition-opacity duration-300">
+          <div class="flex items-center justify-between font-mono text-[11px] font-bold">
+            <span class="uppercase tracking-wider">Kepal &amp; Senyum</span>
+            <span id="fist-label" class="tabular-nums text-[#0284c7]">0.0 / 2.0s</span>
+          </div>
+          <div class="w-full h-2.5 bg-zinc-200 rounded-sm overflow-hidden border border-zinc-900">
+            <div id="fist-bar" class="h-full w-0 bg-[#38bdf8]"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Flash feedback -->
+  <div id="flash" class="fixed inset-0 z-50 pointer-events-none opacity-0"></div>
+
+  <script type="module" src="js/main.js?v=101"></script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+# Gesture Definitions
+# Each gesture defines a temporal pattern of poses to recognize
+#
+# Format:
+#   name: Gesture identifier
+#   threshold: Minimum confidence (0-1) required for detection
+#   timeWindow: Duration in seconds the gesture should take
+#   debounceTime: Milliseconds before same gesture can trigger again
+#   sequence: Array of keypoint conditions that must be met
+#
+# Keypoint names: nose, left_eye, right_eye, left_ear, right_ear,
+#   left_shoulder, right_shoulder, left_elbow, right_elbow,
+#   left_wrist, right_wrist, left_hip, right_hip,
+#   left_knee, right_knee, left_ankle, right_ankle, etc.
+
+gestures:
+  # T-Pose: Arms extended horizontally
+  - name: "t_pose"
+    threshold: 0.85
+    timeWindow: 1.0
+    debounceTime: 2000
+    description: "Arms extended horizontally to form a T shape"
+    conditions:
+      - keypoints:
+          - name: "left_shoulder"
+            y_range: [0.25, 0.45]
+          - name: "left_elbow"
+            y_range: [0.25, 0.45]
+          - name: "left_wrist"
+            y_range: [0.25, 0.45]
+          - name: "right_shoulder"
+            y_range: [0.25, 0.45]
+          - name: "right_elbow"
+            y_range: [0.25, 0.45]
+          - name: "right_wrist"
+            y_range: [0.25, 0.45]
+      - keypoints:
+          - name: "left_wrist"
+            x_less_than: "left_shoulder"
+            x_difference_min: 0.15
+          - name: "right_wrist"
+            x_greater_than: "right_shoulder"
+            x_difference_min: 0.15
+
+  # Hands Up: Both arms raised above head
+  - name: "hands_up"
+    threshold: 0.80
+    timeWindow: 1.0
+    debounceTime: 2000
+    description: "Both hands raised above head"
+    conditions:
+      - keypoints:
+          - name: "left_wrist"
+            y_less_than: "left_shoulder"
+            y_difference_min: 0.1
+          - name: "right_wrist"
+            y_less_than: "right_shoulder"
+            y_difference_min: 0.1
+          - name: "left_wrist"
+            y_less_than: "nose"
+          - name: "right_wrist"
+            y_less_than: "nose"
+
+  # Wave: One hand raised and moving side to side
+  - name: "wave"
+    threshold: 0.75
+    timeWindow: 2.0
+    debounceTime: 3000
+    description: "One hand raised and moving side to side"
+    conditions:
+      - keypoints:
+          - name: "right_wrist"
+            y_less_than: "right_shoulder"
+            y_difference_min: 0.05
+          - name: "right_wrist"
+            y_less_than: "nose"
+          - name: "right_elbow"
+            y_less_than: "right_shoulder"
+    motion:
+      keypoint: "right_wrist"
+      direction: "horizontal"
+      amplitude_min: 0.1
+      frequency_min: 0.5
+
+  # Squat: Hips lowered, knees bent
+  - name: "squat"
+    threshold: 0.80
+    timeWindow: 1.5
+    debounceTime: 2000
+    description: "Squatting position with hips lowered"
+    conditions:
+      - keypoints:
+          - name: "left_hip"
+            y_range: [0.5, 0.75]
+          - name: "right_hip"
+            y_range: [0.5, 0.75]
+          - name: "left_knee"
+            y_greater_than: "left_hip"
+            y_difference_min: 0.05
+          - name: "right_knee"
+            y_greater_than: "right_hip"
+            y_difference_min: 0.05
+
+  # Jump: Hips rise above normal standing position
+  - name: "jump"
+    threshold: 0.75
+    timeWindow: 1.5
+    debounceTime: 2500
+    description: "Jumping with hips rising above standing position"
+    conditions:
+      - keypoints:
+          - name: "left_hip"
+            y_less_than: 0.45
+          - name: "right_hip"
+            y_less_than: 0.45
+          - name: "left_ankle"
+            y_less_than: 0.85
+          - name: "right_ankle"
+            y_less_than: 0.85
+    motion:
+      keypoint: "left_hip"
+      direction: "vertical"
+      amplitude_min: 0.15
+      velocity_min: 0.5
+
+  # Dab: One arm across chest, other arm extended up
+  - name: "dab"
+    threshold: 0.80
+    timeWindow: 1.0
+    debounceTime: 2000
+    description: "Dab pose with one arm tucked and one extended"
+    conditions:
+      - keypoints:
+          - name: "right_wrist"
+            x_range: [0.35, 0.55]
+            y_less_than: "nose"
+          - name: "left_wrist"
+            y_less_than: "left_shoulder"
+            y_difference_min: 0.1
+          - name: "left_elbow"
+            y_less_than: "left_shoulder"
+
+  # Arms Crossed: Arms folded across chest
+  - name: "arms_crossed"
+    threshold: 0.85
+    timeWindow: 1.0
+    debounceTime: 2000
+    description: "Arms crossed over chest"
+    conditions:
+      - keypoints:
+          - name: "left_wrist"
+            x_greater_than: "left_shoulder"
+            x_difference_min: 0.05
+          - name: "right_wrist"
+            x_less_than: "right_shoulder"
+            x_difference_min: 0.05
+          - name: "left_wrist"
+            y_range: [0.3, 0.5]
+          - name: "right_wrist"
+            y_range: [0.3, 0.5]
+
+  # Lean Left: Body tilted to the left
+  - name: "lean_left"
+    threshold: 0.75
+    timeWindow: 1.0
+    debounceTime: 2000
+    description: "Body leaning to the left side"
+    conditions:
+      - keypoints:
+          - name: "left_shoulder"
+            y_greater_than: "right_shoulder"
+            y_difference_min: 0.08
+          - name: "left_hip"
+            y_greater_than: "right_hip"
+            y_difference_min: 0.08
+
+  # Lean Right: Body tilted to the right
+  - name: "lean_right"
+    threshold: 0.75
+    timeWindow: 1.0
+    debounceTime: 2000
+    description: "Body leaning to the right side"
+    conditions:
+      - keypoints:
+          - name: "right_shoulder"
+            y_greater_than: "left_shoulder"
+            y_difference_min: 0.08
+          - name: "right_hip"
+            y_greater_than: "left_hip"
+            y_difference_min: 0.08

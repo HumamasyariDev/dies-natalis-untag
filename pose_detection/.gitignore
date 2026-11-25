@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# MediaPipe models (.task) are committed to the repo so clones run out of the
+# box — see models/. Run `npm run download-models` only to (re)fetch/update them.
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+
+# Environment
+.env
+.env.local
+
+# Sessions (runtime data)
+sessions/*.json

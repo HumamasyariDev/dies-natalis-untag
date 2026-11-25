@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="id">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stroop's Paradox — Game Arena</title>
+  <meta name="color-scheme" content="light" />
+
+  <!-- Fonts: Archivo Black + Plus Jakarta Sans + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+            body: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            crimson: { 500: '#f43f5e', 600: '#e11d48', 700: '#be123c' },
+            sun: { 400: '#fde047', 500: '#fbbf24', 600: '#d97706' },
+            dusk: { 900: '#0a0407', 800: '#14080e', 700: '#1e0c15' },
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- MediaPipe Hands + Pose + QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <link rel="stylesheet" href="styles/base.css?v=98" />
+  <link rel="stylesheet" href="styles/lobby.css?v=98" />
+  <link rel="stylesheet" href="styles/calib.css?v=98" />
+  <link rel="stylesheet" href="styles/game.css?v=135" />
+</head>
+
+<body class="bg-[#fff7f7] text-zinc-900 font-body overflow-hidden select-none game-mode arena-page">
+
+  <div class="bg-dusk"></div>
+
+  <!-- Kotak Kamera PiP di Samping Kiri (Muncul saat 04 Kinestetik Full Arena) -->
+  <div id="cam-box" class="cam-box">
+    <div class="cam-box-header">
+      <div class="flex items-center gap-1.5">
+        <span class="inline-block w-2 h-2 rounded-full bg-[#22c55e] border border-zinc-900 animate-pulse"></span>
+        <span>LIVE CV</span>
+      </div>
+      <span
+        class="font-mono text-[11px] font-black bg-[#fde047] text-[#111113] px-2 py-0.5 rounded-full border border-[#111113] shadow-[1px_1px_0_#111113]">🎯
+        <span id="subway-targets">0</span>/10</span>
+    </div>
+    <div class="cam-box-viewport">
+      <video id="webcam" class="cam-feed-box" playsinline muted autoplay></video>
+      <canvas id="cam-overlay" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+    </div>
+    <div class="cam-box-footer">
+      <span id="subway-posture" class="font-mono text-xs font-black text-[#111113]">🏃 JALUR TENGAH</span>
+    </div>
+  </div>
+  <canvas id="fx" class="fixed inset-0 w-full h-full pointer-events-none"></canvas>
+
+  <header id="hud" class="fixed top-0 inset-x-0 z-30 flex items-center justify-between gap-3 px-5 py-2.5">
+    <div class="brand-pill flex items-center gap-2.5 shrink-0">
+      <a href="index.html" class="flex items-center gap-2 hover:opacity-85 transition-opacity" title="Kembali ke Lobi">
+        <img src="assets/logo-untag.png" alt="UNTAG Surabaya"
+          class="w-9 h-9 md:w-10 md:h-10 object-contain drop-shadow-[1px_1px_0_#111113]" />
+        <span class="brand-badge text-base md:text-lg"><span>/</span>stroop</span>
+      </a>
+      <span
+        class="text-[11px] font-mono text-[#dc2626] font-extrabold border-l-2 border-zinc-900/20 pl-2.5 hidden sm:inline whitespace-nowrap">UNTAG
+        SURABAYA</span>
+    </div>
+
+    <ol id="stepper" class="hidden lg:flex items-center gap-1 font-mono text-[11px]">
+      <li data-step="1" class="step done">01 KALIBRASI</li>
+      <li data-step="2" class="step active">02 VISUAL</li>
+      <li data-step="3" class="step">03 AUDITORI</li>
+      <li data-step="4" class="step">04 KINESTETIK</li>
+      <li data-step="5" class="step">05 HASIL</li>
+    </ol>
+
+    <div class="flex items-center gap-2 font-mono text-[11px] shrink-0">
+      <div id="hud-player-chip" class="hud-player-chip hidden" title="Identitas Peserta Terdaftar">
+        <img id="hud-player-avatar" alt="Avatar Peserta" />
+        <div class="flex flex-col leading-none pr-1">
+          <span class="text-[8px] font-bold uppercase tracking-widest text-zinc-500">PESERTA</span>
+          <span id="hud-player-id" class="text-[11px] font-black text-zinc-900 mt-0.5">#VAK-000</span>
+        </div>
+      </div>
+      <button id="btn-bgm" type="button"
+        class="chip bg-[#fde047] hover:bg-[#ef4444] hover:text-white font-bold cursor-pointer whitespace-nowrap">
+        <span>♪</span>
+        <span id="bgm-label">BGM: ON</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Stack Banner Atas (Tidak pernah saling menumpuk) -->
+  <div class="fixed top-[4.4rem] inset-x-0 z-[45] flex flex-col items-center gap-2 px-4 pointer-events-none">
+    <!-- Banner Mode Uji Coba / Demo Penjaga Stand (Data Tidak Disimpan) -->
+    <div id="demo-banner" class="hidden pointer-events-auto flex items-center gap-3 bg-[#fde047] border-[2.5px] border-zinc-900 shadow-[4px_4px_0_#111113] rounded-full pl-4 pr-2 py-1.5 font-mono text-xs font-black text-zinc-900">
+      <span class="tracking-wide uppercase">★ MODE UJI COBA · DATA TIDAK DISIMPAN</span>
+      <button id="btn-exit-demo" type="button"
+        class="bg-[#dc2626] hover:bg-red-700 text-white px-3 py-1 rounded-full border-2 border-zinc-900 shadow-[1.5px_1.5px_0_#111113] text-[11px] font-black cursor-pointer transition-transform active:translate-y-0.5">
+        ✕ SELESAI DEMO
+      </button>
+    </div>
+
+    <!-- Banner controller terputus saat tes aktif -->
+    <div id="pad-banner" class="hidden pointer-events-none">
+      <div class="calib-card font-mono text-xs font-bold px-4 py-1.5 bg-[#fffdf7]">
+        Tekan tombol apa saja di controller PS3 untuk menghubungkan
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LAYER UTAMA GAME ===== -->
+  <main class="relative z-20 w-screen h-screen flex items-center justify-center">
+
+    <!-- INTRO TAHAP (Poster Pop-Zine Halaman Penuh) -->
+    <section data-screen="intro" class="screen">
+      <div class="w-full h-full max-w-6xl mx-auto px-8 md:px-14 pt-20 pb-6 flex flex-col justify-between">
+
+        <div class="flex flex-col items-center text-center my-auto pt-3 relative">
+          <div id="intro-tag"
+            class="inline-flex items-center gap-2 font-mono text-xs font-bold tracking-[0.18em] uppercase mb-2.5 bg-[#fb923c] text-zinc-900 px-4 py-1 rounded-full border-2 border-zinc-900 shadow-[3px_3px_0_#111113] -rotate-1">
+            02 · UJI VISUAL
+          </div>
+
+          <div class="relative inline-flex flex-col items-center">
+            <h2 id="intro-title" class="flex flex-col items-center">
+              <span class="hero-word hero-word-blue text-4xl sm:text-6xl md:text-7xl">LIHAT WARNA</span>
+              <span class="hero-word hero-word-yellow text-4xl sm:text-6xl md:text-7xl mt-1">ABAIKAN KATA</span>
+            </h2>
+          </div>
+
+          <p id="intro-sub"
+            class="mt-3 text-zinc-900 text-sm md:text-base font-bold max-w-2xl text-balance leading-snug bg-white/95 px-5 py-2 rounded-xl border-2 border-zinc-900 shadow-[3px_3px_0_#111113]">
+          </p>
+
+          <div class="mt-3 flex flex-wrap items-center justify-center gap-2.5">
+            <div
+              class="bg-white/95 px-4 py-2 rounded-xl border-2 border-zinc-900 shadow-[3px_3px_0_#111113] flex flex-wrap items-center justify-center gap-2">
+              <span id="intro-demo-label"
+                class="font-mono text-[10px] font-bold uppercase tracking-wider bg-[#fde047] px-2 py-0.5 rounded border border-zinc-900">CONTOH
+                JEBAKAN</span>
+              <div id="intro-demo" class="flex flex-wrap items-center justify-center gap-1.5"></div>
+            </div>
+            <button id="btn-test-voice" type="button" aria-label="Cek suara speaker"
+              class="hidden items-center gap-1.5 font-mono text-xs font-extrabold bg-[#fde047] hover:bg-[#fb923c] text-zinc-900 px-3.5 py-2 rounded-xl border-2 border-zinc-900 shadow-[3px_3px_0_#111113] transition-transform active:translate-y-0.5 cursor-pointer">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.6"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+              <span>Cek Suara</span>
+            </button>
+          </div>
+
+          <div id="intro-legend" class="mt-4"></div>
+        </div>
+
+                <div class="flex flex-wrap items-center justify-center gap-3 pb-4">
+          <button id="btn-intro-demo" type="button"
+            class="id-action-btn bg-[#fde047] hover:bg-[#fbbf24] text-zinc-900 !rounded-full !px-5 !py-3 text-xs md:text-sm"
+            title="Mode Uji Coba untuk Penjaga Stand (hasil tidak masuk skor tes)">
+            <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>UJI COBA (DEMO)</span>
+          </button>
+          <button id="btn-intro-start" type="button" class="cmd-pill group" title="Mulai Tes Resmi">
+            <span class="flex items-center gap-2.5">
+              <span class="text-[#0284c7] font-black font-mono">❯</span>
+              <span class="font-extrabold tracking-wide">MULAI TES</span>
+              <span id="intro-ready" class="text-zinc-500 font-semibold text-xs tracking-normal hidden md:inline border-l border-zinc-300 pl-2.5"></span>
+            </span>
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- COUNTDOWN / FIKSASI -->
+    <section data-screen="count" class="screen">
+      <div id="count-num"
+        class="font-display font-black text-[12rem] md:text-[16rem] text-zinc-900 leading-none tabular-nums">3</div>
+    </section>
+
+    <!-- STIMULUS STROOP -->
+    <section data-screen="stim" class="screen">
+      <div class="flex flex-col items-center w-full max-w-2xl px-4">
+        <div class="flex flex-wrap items-center justify-center gap-2 mb-3">
+          <div id="stim-progress"
+            class="font-mono text-xs md:text-sm font-bold tracking-[0.18em] uppercase bg-[#fde047] text-zinc-900 border-2 border-zinc-900 shadow-[2px_2px_0_#111113] rounded-full px-4 py-1">
+            SOAL 1 / 10</div>
+          <div id="stim-rush"
+            class="hidden font-mono text-xs md:text-sm font-black tracking-[0.15em] uppercase bg-red-600 text-white border-2 border-zinc-900 shadow-[2px_2px_0_#111113] rounded-full px-3.5 py-1 animate-pulse">
+            ⚡ FINAL RUSH</div>
+          <div id="stim-combo"
+            class="hidden font-mono text-xs md:text-sm font-black tracking-[0.12em] uppercase bg-orange-400 text-zinc-900 border-2 border-zinc-900 shadow-[2px_2px_0_#111113] rounded-full px-3.5 py-1">
+            🔥 COMBO x2</div>
+        </div>
+        <div id="stim-timer-wrap" class="w-full max-w-md mb-4">
+          <div class="flex justify-between items-center font-mono text-[11px] font-bold text-zinc-700 mb-1">
+            <span id="stim-timer-label">BATAS WAKTU</span>
+            <span id="stim-timer-text" class="tabular-nums">4.0s</span>
+          </div>
+          <div id="stim-timer-track"
+            class="h-3.5 w-full bg-white border-2 border-zinc-900 shadow-[2px_2px_0_#111113] rounded-full overflow-hidden">
+            <div id="stim-timer-fill" class="h-full bg-emerald-500 transition-colors duration-100" style="width:100%">
+            </div>
+          </div>
+        </div>
+        <div id="stim-holder" class="relative flex items-center justify-center"></div>
+        <div id="stim-legend" class="mt-6"></div>
+        <p id="stim-feedback" class="font-mono mt-4 h-6 text-base md:text-lg font-bold text-zinc-900"></p>
+      </div>
+    </section>
+
+    <!-- TAHAP 5: HASIL REVEAL · OFFICIAL COGNITIVE ID CARD -->
+    <section data-screen="result" class="screen">
+      <div class="result-wrap w-full max-w-6xl mx-auto px-4 md:px-8 pt-[3.8rem] pb-8 h-full flex items-center justify-center">
+        <div class="w-full grid lg:grid-cols-12 gap-5 md:gap-6 items-stretch">
+
+          <!-- KIRI (7 Kolom / ~58%): KARTU IDENTITAS KOGNITIF (FOKUS UTAMA) -->
+          <article class="result-card-shell lg:col-span-7 justify-between">
+            <!-- Header Strip -->
+            <div class="result-card-header">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <img src="assets/logo-untag-emblem.png" alt="UNTAG Surabaya" class="w-7 h-7 object-contain shrink-0" />
+                <div class="min-w-0 leading-tight">
+                  <p class="font-display font-extrabold text-xs tracking-wider text-zinc-900 uppercase">STROOP'S PARADOX</p>
+                  <p class="font-mono text-[9px] font-bold text-red-600 uppercase tracking-wide">DIES NATALIS · UNTAG SURABAYA 2026</p>
+                </div>
+              </div>
+              <span id="id-card-serial" class="font-mono text-xs font-black bg-[#fde047] text-zinc-900 px-2.5 py-0.5 rounded-full border border-zinc-900 shadow-[1.5px_1.5px_0_#111113] shrink-0">#VAK-000</span>
+            </div>
+
+            <!-- Card Body: Grid Foto & Tipografi Gaya Belajar -->
+            <div class="p-5 flex-1 grid sm:grid-cols-[165px_1fr] gap-5 items-start bg-white">
+              <!-- Sisi Foto & Signature -->
+              <div class="flex flex-col items-center gap-3 w-full shrink-0">
+                <div class="result-photo-box">
+                  <img id="id-card-photo" alt="Foto Peserta" style="display:none;" class="w-full h-full object-cover" />
+                  <div id="id-card-photo-empty" class="flex flex-col items-center justify-center text-center p-3 text-zinc-400 font-mono text-[10px] font-bold w-full h-full">
+                    <svg viewBox="0 0 24 24" class="w-8 h-8 mb-1.5 text-zinc-300" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                      <circle cx="12" cy="13" r="4"/>
+                    </svg>
+                    <span>Foto Peserta</span>
+                  </div>
+                </div>
+
+                <!-- Tanda Tangan Udara -->
+                <div class="w-full">
+                  <div class="flex items-center justify-between font-mono text-[9px] font-bold uppercase tracking-wider text-zinc-500 mb-1 px-0.5">
+                    <span>Tanda Tangan Udara</span>
+                    <span class="text-zinc-400">Sensor Kamera</span>
+                  </div>
+                  <div class="result-sig-box">
+                    <img id="id-card-sig" alt="Tanda tangan peserta" style="display:none;" class="max-h-full max-w-full object-contain" />
+                    <span id="id-card-sig-empty" class="font-mono text-[9px] font-bold text-zinc-400 italic">Terverifikasi Kamera</span>
+                  </div>
+                </div>
+
+                <p id="id-card-stamp" class="font-mono text-[9px] font-extrabold text-center tracking-wider uppercase text-zinc-500">★ VERIFIED KOGNITIF ★</p>
+              </div>
+
+              <!-- Sisi Tipografi Dominan & Catatan Insight -->
+              <div class="min-w-0 flex flex-col gap-2.5 justify-start">
+                <div>
+                  <span class="font-mono text-[10px] font-extrabold uppercase tracking-[0.16em] text-zinc-400">Gaya Belajar Dominan</span>
+                  <h1 id="res-style" class="res-style-headline mt-0.5" data-text="AUDITORI">AUDITORI</h1>
+                  
+                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span id="res-archetype" class="inline-flex items-center gap-1 font-mono text-[10px] font-black uppercase tracking-wider bg-[#fde047] text-zinc-900 px-2.5 py-0.5 rounded-full border border-zinc-900 shadow-[1.5px_1.5px_0_#111113]">
+                      AUDITORY ACE
+                    </span>
+                    <span class="font-mono text-[9px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-300">
+                      Sensori V-A-K Teruji
+                    </span>
+                  </div>
+
+                  <p id="res-style-sub" class="text-xs font-semibold text-zinc-700 leading-snug mt-2">
+                    Lebih cepat menyerap materi melalui instruksi lisan, intonasi suara, diskusi kelompok, dan rekaman audio.
+                  </p>
+                </div>
+
+                <!-- Karakteristik Kognitif Matrix (Mengisi space dengan info bernilai tinggi) -->
+                <div class="bg-[#faf8f5] p-2.5 rounded-xl border border-zinc-200 space-y-1 font-mono text-[10px] font-bold text-zinc-700">
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-zinc-900 shrink-0"></span>
+                    <span id="res-trait-1">Fokus Auditori Tinggi</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-zinc-900 shrink-0"></span>
+                    <span id="res-trait-2">Sensitivitas Nada &amp; Ritme</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-zinc-900 shrink-0"></span>
+                    <span id="res-trait-3">Retensi Narasi Verbal Kuat</span>
+                  </div>
+                </div>
+
+                <!-- Catatan Cara Belajar (Field Note Quote) -->
+                <div class="pt-2 border-t border-zinc-100">
+                  <span id="res-tip-title" class="font-mono text-[9px] font-extrabold uppercase tracking-wider text-zinc-500 block mb-1">Catatan Cara Belajar</span>
+                  <p id="res-tip" class="res-insight-quote"></p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer Strip Resmi -->
+            <div class="bg-[#faf8f5] border-t-2 border-zinc-900 px-4 py-2 flex items-center justify-between font-mono text-[10px] font-bold text-zinc-600">
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-2 h-2 rounded-full bg-[#16a34a] border border-zinc-900"></span>
+                LAB PSIKOLOGI KOGNITIF · V-A-K
+              </span>
+              <span id="id-card-date" class="text-zinc-500 font-semibold">24 NOV 2026</span>
+            </div>
+          </article>
+
+          <!-- KANAN (5 Kolom / ~42%): METRIK PERFORMA & TOMBOL AKSI -->
+          <aside class="result-card-shell lg:col-span-5 justify-between">
+            <div class="result-card-header">
+              <div class="leading-tight">
+                <p class="font-display font-extrabold text-xs uppercase tracking-wide text-zinc-900">ANALISIS PERFORMA</p>
+                <p class="font-mono text-[9px] font-bold text-zinc-500">Akurasi &amp; Waktu Respons</p>
+              </div>
+              <span id="res-fastest-pill" class="font-mono text-[10px] font-black bg-[#fde047] text-zinc-900 px-2.5 py-0.5 rounded-full border border-zinc-900 shadow-[1.5px_1.5px_0_#111113]">SKOR BIS 84/100</span>
+            </div>
+
+            <div class="p-4 flex-1 flex flex-col justify-between gap-4 bg-white">
+              <!-- Bar Respons 3 Modalitas -->
+              <div>
+                <div class="flex items-center justify-between mb-1.5 px-0.5">
+                  <span class="font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-500">Breakdown Modalitas</span>
+                  <span class="font-mono text-[9px] font-semibold text-zinc-400">Skor · Waktu · Akurasi</span>
+                </div>
+                <div id="res-bars" class="space-y-2 font-mono text-[11px]"></div>
+              </div>
+
+              <!-- Info Metodologi Singkat & Rapi -->
+              <div class="p-3 rounded-xl bg-[#faf8f5] border-2 border-zinc-900 shadow-[2px_2px_0_#111113]">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-mono text-[10px] font-black uppercase tracking-wider text-zinc-900">Indeks Stroop V-A-K</span>
+                  <span class="font-mono text-[9px] font-bold text-zinc-500">Dies Natalis 2026</span>
+                </div>
+                <p class="font-sans text-[11px] font-semibold text-zinc-600 leading-relaxed">
+                  Skor dihitung dari integrasi waktu reaksi (50%) dan akurasi (50%) saat menghadapi distraksi sensorik bertingkat.
+                </p>
+              </div>
+
+              <!-- Tombol Aksi (Tegas, Proporsional, Neo-Brutalist) -->
+              <div class="flex flex-col sm:flex-row gap-2.5 w-full">
+                <button id="btn-download-card" type="button" class="id-action-btn bg-[#fde047] hover:bg-[#fbbf24] text-zinc-900 flex-1">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>UNDUH PNG</span>
+                </button>
+                <button id="btn-new-player" type="button" class="id-action-btn bg-white hover:bg-zinc-100 text-zinc-900 flex-1">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="1 4 1 10 7 10"></polyline>
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                  </svg>
+                  <span>PESERTA BARU</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="bg-[#faf8f5] border-t-2 border-zinc-900 px-4 py-2 flex items-center justify-between font-mono text-[9px] font-bold text-zinc-500">
+              <span>BOOTH STROOP'S PARADOX</span>
+              <span>UNTAG SURABAYA · 2026</span>
+            </div>
+          </aside>
+
+        </div>
+      </div>
+
+      <div id="reset-hint" class="absolute bottom-2 inset-x-0 flex justify-center px-4 pointer-events-none">
+        <p class="calib-card font-mono text-[11px] text-zinc-900 font-bold px-4 py-1 flex items-center gap-2">
+          <span>Geser tangan kiri ke kanan untuk mengulang</span>
+          <span class="text-zinc-400">·</span>
+          <span id="reset-lock" class="text-[#dc2626] font-extrabold"></span>
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ARENA 3D SUBWAY SURFERS RUNNER (z-index 22) -->
+  <div id="beatpose-wrap"
+    class="fixed inset-0 z-[22] bg-[#2f6fb8] opacity-0 pointer-events-none invisible transition-opacity duration-200">
+    <iframe id="beatpose-frame" class="w-full h-full border-0"
+      src="subway-surfers/dist/index.html?assessment=1&v=112"></iframe>
+  </div>
+
+  <!-- POP-UP STAGE CLEAR (REKAP BABAK) -->
+  <div id="stage-clear-modal"
+    class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-zinc-950/55 backdrop-blur-sm">
+    <div
+      class="bg-[#fffdf5] border-[3px] border-zinc-900 shadow-[6px_6px_0_#111113] rounded-2xl max-w-md w-full p-6 md:p-8 text-center">
+      <div id="sc-badge"
+        class="inline-block font-mono text-xs font-bold tracking-[0.18em] uppercase bg-[#fde047] text-zinc-900 border-2 border-zinc-900 shadow-[2px_2px_0_#111113] rounded-full px-4 py-1">
+        02 VISUAL · SELESAI</div>
+      <h2 id="sc-title" class="font-display font-black text-3xl md:text-4xl text-zinc-900 mt-4 tracking-tight">BABAK
+        SELESAI!</h2>
+      <p id="sc-tier" class="font-mono text-xs font-bold uppercase tracking-widest text-[#dc2626] mt-1">⚡ REFLEKS KILAT
+      </p>
+
+      <div class="grid grid-cols-2 gap-3 mt-5">
+        <div class="bg-white border-2 border-zinc-900 shadow-[3px_3px_0_#111113] rounded-xl p-3">
+          <p class="font-mono text-[11px] uppercase tracking-wider text-zinc-500 font-bold">Rata-Rata Reaksi</p>
+          <p id="sc-avg" class="font-display font-black text-2xl md:text-3xl text-zinc-900 mt-1">0 ms</p>
+        </div>
+        <div class="bg-white border-2 border-zinc-900 shadow-[3px_3px_0_#111113] rounded-xl p-3">
+          <p class="font-mono text-[11px] uppercase tracking-wider text-zinc-500 font-bold">Kesalahan</p>
+          <p id="sc-err" class="font-display font-black text-2xl md:text-3xl text-zinc-900 mt-1">0</p>
+        </div>
+      </div>
+
+      <p id="sc-note"
+        class="mt-5 text-sm md:text-base font-medium text-zinc-700 bg-amber-50 border-2 border-zinc-900 rounded-xl px-4 py-3">
+      </p>
+
+      <button id="btn-stage-next" type="button"
+        class="mt-6 w-full font-display font-black text-base md:text-lg bg-[#fde047] hover:bg-yellow-300 active:translate-y-0.5 text-zinc-900 border-[3px] border-zinc-900 shadow-[4px_4px_0_#111113] rounded-xl py-3.5 px-5 transition cursor-pointer">
+        LANJUT →
+      </button>
+      <p class="font-mono text-[11px] text-zinc-500 font-semibold mt-3">Tekan START / ✕ di stik PS3 atau klik tombol</p>
+    </div>
+  </div>
+
+  <!-- Flash & danger edge feedback respon benar/salah -->
+  <div id="edge-danger" class="fixed inset-0 z-30 pointer-events-none opacity-0 transition-opacity duration-100"></div>
+  <div id="flash" class="fixed inset-0 z-50 pointer-events-none opacity-0"></div>
+
+  <!-- MODAL DIAGNOSTIK GAMEPAD -->
+  <div id="gamepad-diag"
+    class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center hidden p-4">
+    <div class="glass-panel max-w-xl w-full text-left font-mono text-xs !bg-zinc-950 !text-zinc-100 !border-zinc-700">
+      <div class="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+        <h3 class="font-display text-sm font-bold text-white uppercase tracking-wider">
+          Diagnostik Hardware Gamepad
+        </h3>
+        <button id="diag-close" class="text-zinc-400 hover:text-white px-2.5 py-1 rounded-full bg-white/10">[ESC /
+          TAB]</button>
+      </div>
+
+      <div class="text-zinc-300 space-y-2 mb-4">
+        <div>Device: <span id="diag-id" class="text-rose-400 font-semibold">Tidak terdeteksi</span></div>
+        <div>Mapping Browser: <span id="diag-mapping" class="text-sun-400">standard</span></div>
+        <div>Mode Terdeteksi: <span id="diag-preset" class="text-white font-bold">Standard PS3</span></div>
+      </div>
+
+      <div class="mb-4 bg-black/40 p-3 rounded-lg border border-white/10">
+        <div class="text-zinc-400 mb-2 font-display text-[11px]">PILIH PROFIL TOMBOL:</div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            class="preset-btn px-3 py-1.5 rounded-full bg-white/10 text-white hover:bg-rose-600/30 border border-white/15"
+            data-preset="standard">Standard PS3 (Kabel/W3C)</button>
+          <button
+            class="preset-btn px-3 py-1.5 rounded-full bg-white/10 text-white hover:bg-rose-600/30 border border-white/15"
+            data-preset="xbox_bt">Xbox / Bluetooth Mode</button>
+          <button
+            class="preset-btn px-3 py-1.5 rounded-full bg-white/10 text-white hover:bg-rose-600/30 border border-white/15"
+            data-preset="ds3_raw_linux">PS3 Bluetooth Raw Linux</button>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <div class="text-zinc-400 mb-2 font-display text-[11px]">MONITOR TOMBOL AKTIF:</div>
+        <div id="diag-buttons-grid" class="grid grid-cols-4 sm:grid-cols-6 gap-2 text-center"></div>
+      </div>
+
+      <div class="bg-black/40 p-3 rounded-lg border border-white/10 space-y-1">
+        <div class="text-zinc-400 font-display text-[11px] mb-1">MAPPING SAAT INI UNTUK GAME:</div>
+        <div class="flex justify-between text-rose-400"><span>Lingkaran (Uji Visual):</span><span id="map-circle">Index
+            1</span></div>
+        <div class="flex justify-between text-sun-400"><span>Segitiga (Uji Auditori):</span><span
+            id="map-triangle">Index 3</span></div>
+        <div class="flex justify-between text-zinc-300"><span>Silang (Bawah):</span><span id="map-cross">Index 0</span>
+        </div>
+        <div class="flex justify-between text-zinc-300"><span>Kotak (Kiri):</span><span id="map-square">Index 2</span>
+        </div>
+      </div>
+      <p class="text-[10px] text-zinc-400 mt-3 text-center">Tekan <kbd
+          class="px-1.5 py-0.5 rounded bg-white/10 border border-white/15 text-zinc-200">TAB</kbd> kapan saja untuk
+        membuka atau menutup panel ini.</p>
+    </div>
+  </div>
+
+  <script src="js/html2canvas.min.js"></script>
+  <script type="module" src="js/game-main.js?v=142"></script>
+</body>
+
+</html>

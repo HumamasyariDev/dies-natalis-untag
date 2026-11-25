@@ -1,0 +1,75 @@
+.calib-headline {
+  font-family: 'Archivo Black', 'Plus Jakarta Sans', sans-serif;
+  font-weight: 900;
+  line-height: 0.96;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  -webkit-text-stroke: 2px var(--ink);
+  text-shadow: 4px 4px 0 var(--ink);
+  text-transform: uppercase;
+}
+.calib-headline.ready {
+  color: var(--sun);
+}
+
+.calib-card {
+  background: rgba(250, 248, 242, 0.94);
+  border: 2px solid var(--ink);
+  border-radius: 0.65rem;
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--ink);
+}
+
+/* Photobooth Viewfinder Frame saat siap foto */
+.calib-viewfinder {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(340px, 68vw);
+  height: min(410px, 56vh);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 15;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.calib-viewfinder.active {
+  opacity: 1;
+}
+.vf-corner {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-color: #fde047;
+  border-style: solid;
+  filter: drop-shadow(2px 2px 0 #111113);
+}
+.vf-tl { top: 0; left: 0; border-width: 5px 0 0 5px; border-top-left-radius: 10px; }
+.vf-tr { top: 0; right: 0; border-width: 5px 5px 0 0; border-top-right-radius: 10px; }
+.vf-bl { bottom: 0; left: 0; border-width: 0 0 5px 5px; border-bottom-left-radius: 10px; }
+.vf-br { bottom: 0; right: 0; border-width: 0 5px 5px 0; border-bottom-right-radius: 10px; }
+
+.vf-count {
+  font-family: 'Archivo Black', 'Plus Jakarta Sans', sans-serif;
+  font-size: 5.5rem;
+  line-height: 1;
+  color: #fde047;
+  -webkit-text-stroke: 3px #111113;
+  text-shadow: 5px 5px 0 #111113;
+  transition: transform 0.12s ease;
+}
+
+/* ID Card Preview Overlay after Snapshot */
+.id-preview-card {
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 1.25rem;
+  box-shadow: 8px 8px 0 var(--ink);
+  animation: idCardPop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes idCardPop {
+  from { opacity: 0; transform: scale(0.88) rotate(-2deg); }
+  to { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+

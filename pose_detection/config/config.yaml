@@ -1,0 +1,133 @@
+# MediaPipe Pose Detection Configuration
+
+# Detector settings
+detector:
+  modelPath: "./models/pose_landmarker_full.task"  # lite | full | heavy
+  runningMode: "VIDEO"                              # IMAGE | VIDEO | LIVE_STREAM
+  numPoses: 1                                       # MVP: 1 only, designed for multi
+  minDetectionConfidence: 0.5                       # 0.0 - 1.0
+  minTrackingConfidence: 0.5                        # 0.0 - 1.0
+  minPosePresenceConfidence: 0.5                    # 0.0 - 1.0
+
+# Performance
+performance:
+  targetFps: 30
+  enableGpu: true
+
+# Input
+input:
+  source: "webcam"                                  # webcam | video | image
+  videoPath: null                                   # For batch processing (stretch)
+  webcamId: 0                                       # Legacy index (unused; superseded by deviceId)
+  deviceId: null                                    # Selected camera (MediaDevices deviceId); null = browser default
+  resolution:                                       # Requested capture size (ideal, not forced)
+    width: 1280                                     # 640 | 1280 | 1920  (480p | 720p | 1080p)
+    height: 720                                     # 720p default: plenty for MediaPipe (it downscales
+                                                    # for inference) and lets most webcams reach 60fps
+  frameRate: 30                                     # Target capture fps: 30 | 60.
+                                                    # 30 = steady (advisory ideal; auto-exposure can
+                                                    # hold 30 even in dim light). 60 = bright-light
+                                                    # opt-in: forces a high-rate mode, which the camera
+                                                    # only sustains with ample light (else it drops to
+                                                    # 30/15 as exposure time doubles). Prefer 30 indoors.
+
+# Filtering/Smoothing
+filtering:
+  enabled: true
+  type: "oneEuro"                                   # oneEuro (MVP), extensible later
+  oneEuroConfig:
+    minCutoff: 8.0     # higher = less smoothing at rest (more responsive)
+    beta: 1.6          # higher = tracks fast motion with less lag
+    dCutoff: 1.0       # retuned by feel — 1.0/0.007 (the old default) was too heavy
+
+# Coordinate systems (which to provide)
+coordinates:
+  normalized: true     # 0-1 range, resolution independent
+  pixel: true          # Actual screen pixels
+  world: true          # 3D relative to camera (Sprint 11)
+
+# Visualization
+display:
+  enabled: true        # Set false for headless/module-only mode
+  mode: "overlay"      # "overlay" | "stickFigure" | "keypoints" | "none"
+
+  overlay:
+    showWebcam: true
+    showSkeleton: true
+    showKeypoints: true
+    keypointRadius: 5
+    lineWidth: 2
+    confidenceColorCoding: false  # Color by confidence (stretch)
+
+  stickFigure:
+    backgroundColor: "#000000"
+    figureColor: "#00FF00"
+    showKeypoints: true
+
+  keypoints:
+    showAll: true
+    visibleJoints: "all"  # "all" or array like ["nose", "left_shoulder", "right_shoulder"]
+    radius: 5
+
+# Storage (Sprint 8)
+storage:
+  enabled: false
+  format: "json"                           # json | csv | both
+  sessionPath: "./sessions"
+  autoSave: false
+  autoSaveInterval: 300000                 # 5 minutes in ms
+  maxFramesInMemory: 10000                 # Prevent OOM
+  includeTimestamps: true
+  includeConfidence: true
+  compression: false                       # gzip compression (future)
+
+# API (Sprint 9)
+api:
+  enabled: false                             # Set to true to enable REST API
+  cors:
+    enabled: true
+    allowedOrigins:
+      - "http://localhost:*"
+      - "http://127.0.0.1:*"
+      - "http://192.168.*"          # same-LAN devices (e.g. playing the demos from the laptop)
+  authentication:
+    enabled: false                           # Set to true to require API key
+    apiKey: "your_secret_key_here"           # Change this in production
+  rateLimit:
+    enabled: true
+    requestsPerMinute: 100
+    burstSize: 10                            # Allow short bursts
+  endpoints:
+    current: "/api/pose/current"             # GET last detected pose
+    stream: "/api/pose/stream"               # SSE stream of poses
+    update: "/api/pose/update"               # POST from client (internal)
+
+# Gestures (Sprint 12)
+gestures:
+  enabled: false                             # Set to true to enable gesture recognition
+  definitionsPath: "./config/gestures.yaml"  # Path to gesture definitions
+  sensitivity: 1.0                           # Global threshold multiplier (0.5-1.5)
+  showInUI: true                             # Display recognized gestures in UI
+
+# Angles (Sprint 11)
+angles:
+  enabled: true                              # Set to true to enable angle calculations
+  joints:                                    # Joint angles to calculate
+    - left_elbow
+    - right_elbow
+    - left_knee
+    - right_knee
+    - left_hip
+    - right_hip
+    - left_shoulder
+    - right_shoulder
+    - left_ankle
+    - right_ankle
+    # Or use "all" to calculate all available angles
+  coordinateSystem: "world"                  # "world" | "normalized" (world more accurate)
+  smoothing:                                 # Temporal smoothing of angle values
+    enabled: true                            # Apply 1-Euro filter per joint
+    minCutoff: 1.0                           # Hz; lower = more smoothing at rest
+    beta: 0.05                               # higher = faster response to motion
+    dCutoff: 1.0
+  showInUI: true                             # Display angles in visualization overlay

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module Import Example - MediaPipe Pose Detection</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    .info-box {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .panel {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    video {
+      width: 100%;
+      border-radius: 4px;
+      background: #000;
+    }
+    canvas {
+      width: 100%;
+      border-radius: 4px;
+      background: #000;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .stop-btn {
+      background: #f44336;
+    }
+    .stop-btn:hover {
+      background: #da190b;
+    }
+    .keypoint-data {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .status.success {
+      background: #c8e6c9;
+      color: #2e7d32;
+    }
+    .status.error {
+      background: #ffcdd2;
+      color: #c62828;
+    }
+    .status.info {
+      background: #fff9c4;
+      color: #f57f17;
+    }
+    .metrics {
+      display: flex;
+      gap: 20px;
+      margin: 15px 0;
+    }
+    .metric {
+      flex: 1;
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .metric-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2196f3;
+    }
+    .metric-label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Module Import Example</h1>
+
+  <div class="info-box">
+    <strong>Purpose:</strong> This example demonstrates how to import and use the MediaPipe Pose Detection
+    modules in your own application without the full GUI. It shows the minimal integration pattern for
+    real-time pose tracking.
+  </div>
+
+  <div class="panel">
+    <h2>Controls</h2>
+    <button id="startBtn">Start Detection</button>
+    <button id="stopBtn" class="stop-btn" disabled>Stop Detection</button>
+    <div id="status" class="status info">Ready to start</div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-value" id="fpsValue">0</div>
+        <div class="metric-label">FPS</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="poseCount">0</div>
+        <div class="metric-label">Poses Detected</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="confidenceValue">0%</div>
+        <div class="metric-label">Avg Confidence</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <h2>Video Input</h2>
+      <video id="webcam" autoplay playsinline></video>
+    </div>
+
+    <div class="panel">
+      <h2>Pose Visualization</h2>
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Live Keypoint Data</h2>
+    <div>
+      <label>
+        <input type="checkbox" id="showRawData" /> Show Raw Data
+      </label>
+    </div>
+    <div class="keypoint-data" id="keypointData">
+      Waiting for pose detection...
+    </div>
+  </div>
+
+  <script type="module">
+    // ============================================
+    // EXAMPLE: Importing MediaPipe Pose Modules
+    // ============================================
+
+    import { PoseDetector, KEYPOINT_NAMES } from '../client/js/poseDetector.js';
+    import { FilterPipeline } from '../client/js/filterPipeline.js';
+    import { DataBus } from '../client/js/dataBus.js';
+    import { DisplayModule } from '../client/js/displayModule.js';
+    import { ConfigManager } from '../client/js/configManager.js';
+
+    // ============================================
+    // Application State
+    // ============================================
+
+    let detector = null;
+    let filterPipeline = null;
+    let dataBus = null;
+    let displayModule = null;
+    let videoElement = null;
+    let canvasElement = null;
+    let stream = null;
+    let animationId = null;
+
+    let poseCount = 0;
+    let totalConfidence = 0;
+
+    // ============================================
+    // UI Elements
+    // ============================================
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusEl = document.getElementById('status');
+    const fpsEl = document.getElementById('fpsValue');
+    const poseCountEl = document.getElementById('poseCount');
+    const confidenceEl = document.getElementById('confidenceValue');
+    const keypointDataEl = document.getElementById('keypointData');
+    const showRawDataCheckbox = document.getElementById('showRawData');
+
+    // ============================================
+    // Status Helper
+    // ============================================
+
+    function setStatus(message, type = 'info') {
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`;
+    }
+
+    // ============================================
+    // Initialize Modules
+    // ============================================
+
+    async function initialize() {
+      try {
+        setStatus('Loading configuration...', 'info');
+
+        // Load configuration
+        const configManager = new ConfigManager();
+        await configManager.loadConfig();
+        const config = configManager.getConfig();
+
+        setStatus('Initializing modules...', 'info');
+
+        // Initialize Data Bus (pub-sub for events)
+        dataBus = new DataBus();
+
+        // Initialize Pose Detector
+        detector = new PoseDetector();
+        await detector.initialize(config.detector);
+
+        // Initialize Filter Pipeline (smoothing)
+        filterPipeline = new FilterPipeline(config.filtering.oneEuroConfig);
+
+        // Initialize Display Module
+        canvasElement = document.getElementById('canvas');
+        displayModule = new DisplayModule(canvasElement, config);
+        displayModule.subscribeToDataBus(dataBus);
+
+        // Subscribe to Data Bus events
+        subscribeToEvents();
+
+        setStatus('Ready to start detection', 'success');
+        return true;
+
+      } catch (error) {
+        setStatus(`Initialization failed: ${error.message}`, 'error');
+        console.error('Initialization error:', error);
+        return false;
+      }
+    }
+
+    // ============================================
+    // Subscribe to Data Bus Events
+    // ============================================
+
+    function subscribeToEvents() {
+      // Listen for pose detection events
+      dataBus.onPoseDetected((data) => {
+        poseCount++;
+        poseCountEl.textContent = poseCount;
+
+        // Calculate average confidence
+        const avgVisibility = data.pose.normalized.reduce((sum, kp) => sum + kp.visibility, 0) / 33;
+        totalConfidence += avgVisibility;
+        const avgConfidence = (totalConfidence / poseCount * 100).toFixed(1);
+        confidenceEl.textContent = `${avgConfidence}%`;
+
+        // Display keypoint data
+        displayKeypointData(data);
+      });
+
+      // Listen for pose lost events
+      dataBus.onPoseLost(() => {
+        setStatus('Pose tracking lost...', 'info');
+      });
+
+      // Listen for FPS updates
+      dataBus.onFpsUpdate((fps) => {
+        fpsEl.textContent = Math.round(fps);
+      });
+    }
+
+    // ============================================
+    // Display Keypoint Data
+    // ============================================
+
+    function displayKeypointData(data) {
+      if (!showRawDataCheckbox.checked) {
+        // Show simplified view
+        const keyKeypoints = [0, 5, 6, 11, 12, 15, 16]; // nose, shoulders, hips, ankles
+        let html = '<strong>Key Keypoints (Normalized Coordinates):</strong><br><br>';
+
+        keyKeypoints.forEach(idx => {
+          const kp = data.pose.normalized[idx];
+          html += `<strong>${KEYPOINT_NAMES[idx]}:</strong> ` +
+                  `x=${kp.x.toFixed(3)}, y=${kp.y.toFixed(3)}, ` +
+                  `z=${kp.z.toFixed(3)}, vis=${kp.visibility.toFixed(3)}<br>`;
+        });
+
+        keypointDataEl.innerHTML = html;
+      } else {
+        // Show all keypoints
+        let html = '<strong>All 33 Keypoints:</strong><br><br>';
+        data.pose.normalized.forEach((kp, idx) => {
+          html += `${idx.toString().padStart(2, '0')} ${KEYPOINT_NAMES[idx].padEnd(20)}: ` +
+                  `x=${kp.x.toFixed(3)}, y=${kp.y.toFixed(3)}, ` +
+                  `z=${kp.z.toFixed(3)}, vis=${kp.visibility.toFixed(3)}<br>`;
+        });
+        keypointDataEl.innerHTML = html;
+      }
+    }
+
+    // ============================================
+    // Start Detection
+    // ============================================
+
+    async function startDetection() {
+      try {
+        setStatus('Requesting camera access...', 'info');
+
+        // Get webcam stream
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user'
+          }
+        });
+
+        videoElement = document.getElementById('webcam');
+        videoElement.srcObject = stream;
+
+        await new Promise((resolve) => {
+          videoElement.onloadedmetadata = resolve;
+        });
+
+        // Set canvas size to match video
+        canvasElement.width = videoElement.videoWidth;
+        canvasElement.height = videoElement.videoHeight;
+        displayModule.updateVideoSize(videoElement.videoWidth, videoElement.videoHeight);
+
+        setStatus('Detection running...', 'success');
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        // Start processing loop
+        processFrame();
+
+      } catch (error) {
+        let message = 'Failed to start detection';
+        if (error.name === 'NotAllowedError') {
+          message = 'Camera permission denied';
+        } else if (error.name === 'NotFoundError') {
+          message = 'No camera found';
+        } else if (error.name === 'NotReadableError') {
+          message = 'Camera already in use';
+        }
+        setStatus(`${message}: ${error.message}`, 'error');
+        console.error('Start detection error:', error);
+      }
+    }
+
+    // ============================================
+    // Process Frame (Main Loop)
+    // ============================================
+
+    async function processFrame() {
+      if (!stream) return;
+
+      try {
+        const timestamp = performance.now();
+
+        // Detect pose in current frame
+        const detectionResult = await detector.detectForVideo(videoElement, timestamp);
+
+        // Apply smoothing filter
+        const smoothedResult = filterPipeline.filter(detectionResult, timestamp);
+
+        // Emit events through Data Bus
+        if (smoothedResult.detected) {
+          dataBus.emitPoseDetected(smoothedResult);
+        } else {
+          dataBus.emitPoseLost();
+        }
+
+        // Emit FPS update
+        if (smoothedResult.fps > 0) {
+          dataBus.emitFpsUpdate(smoothedResult.fps);
+        }
+
+      } catch (error) {
+        console.error('Frame processing error:', error);
+      }
+
+      // Continue loop
+      animationId = requestAnimationFrame(processFrame);
+    }
+
+    // ============================================
+    // Stop Detection
+    // ============================================
+
+    function stopDetection() {
+      // Cancel animation loop
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+
+      // Stop webcam stream
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+
+      // Clear video element
+      if (videoElement) {
+        videoElement.srcObject = null;
+      }
+
+      setStatus('Detection stopped', 'info');
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    // ============================================
+    // Event Handlers
+    // ============================================
+
+    startBtn.addEventListener('click', startDetection);
+    stopBtn.addEventListener('click', stopDetection);
+
+    showRawDataCheckbox.addEventListener('change', () => {
+      keypointDataEl.textContent = showRawDataCheckbox.checked
+        ? 'Waiting for pose data (showing all 33 keypoints)...'
+        : 'Waiting for pose data (showing key keypoints)...';
+    });
+
+    // ============================================
+    // Initialize on Page Load
+    // ============================================
+
+    initialize();
+  </script>
+</body>
+</html>

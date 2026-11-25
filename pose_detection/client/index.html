@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MediaPipe Pose Detection</title>
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!--
+    Import map: browsers cannot resolve bare module specifiers (e.g.
+    "@mediapipe/tasks-vision") without one. poseDetector.js dynamically
+    imports the MediaPipe Tasks Vision package; this maps it to the ESM
+    bundle on jsDelivr. Pinned to the installed version (package.json) so the
+    JS API and the WASM assets loaded via FilesetResolver in poseDetector.js
+    stay in lockstep. Must appear before the module script below.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>MediaPipe Pose Detection</h1>
+      <p>Real-time body tracking with configurable visualization</p>
+      <nav class="demo-links">
+        Game demos:
+        <a href="flight-game.html">Wings ✈ (tilt to steer)</a> ·
+        <a href="bird-game.html">Flapper 🦅 (flap to fly)</a>
+      </nav>
+    </header>
+
+    <main>
+      <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output-canvas"></canvas>
+      </div>
+
+      <div id="controls">
+        <div class="control-group">
+          <label for="camera-select">Camera:</label>
+          <select id="camera-select">
+            <option value="">Default camera</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="model-select">Model:</label>
+          <select id="model-select">
+            <option value="lite">Lite (Fast)</option>
+            <option value="full" selected>Full (Balanced)</option>
+            <option value="heavy">Heavy (Accurate)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="resolution-select">Resolution:</label>
+          <select id="resolution-select">
+            <option value="640x480">480p</option>
+            <option value="1280x720" selected>720p</option>
+            <option value="1920x1080">1080p</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="frame-rate-select">Frame rate:</label>
+          <select id="frame-rate-select">
+            <option value="30" selected>30 fps (steady)</option>
+            <option value="60">60 fps (bright light)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="display-mode">Display Mode:</label>
+          <select id="display-mode">
+            <option value="overlay">Overlay</option>
+            <option value="stickFigure">Stick Figure</option>
+            <option value="keypoints">Keypoints Only</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <button id="start-btn">Start Detection</button>
+          <button id="stop-btn" disabled>Stop Detection</button>
+        </div>
+      </div>
+
+      <div id="stats">
+        <span id="fps-display">FPS: --</span>
+        <span id="status-display">Status: Ready</span>
+      </div>
+
+      <!-- Filter Tuning (Diagnostics) -->
+      <div id="filter-panel" class="panel">
+        <h3>Filter Tuning</h3>
+
+        <div class="control-group">
+          <label><input type="checkbox" id="diag-show-raw"> Show raw vs filtered overlay</label>
+          <label><input type="checkbox" id="filter-enabled" checked> Filtering enabled</label>
+        </div>
+
+        <div class="diag-legend">
+          Raw = cyan rings + faint skeleton &middot; Filtered = solid skeleton &middot;
+          Lag = yellow line at wrists/ankles
+        </div>
+
+        <div class="diag-readout">
+          <span>Lag (filtered behind raw): <span id="diag-lag" class="stat-value">&mdash;</span></span>
+          <span>Tip gap: <span id="diag-gap" class="stat-value">0 px</span></span>
+        </div>
+
+        <div class="control-group">
+          <span>Presets:</span>
+          <button class="preset-btn" data-preset="responsive">Responsive</button>
+          <button class="preset-btn" data-preset="balanced">Balanced</button>
+          <button class="preset-btn" data-preset="smooth">Smooth</button>
+        </div>
+
+        <div class="slider-row">
+          <label for="filter-mincutoff">minCutoff</label>
+          <input type="range" id="filter-mincutoff" min="0.1" max="20" step="0.1" value="8.0">
+          <span id="val-mincutoff" class="stat-value">8</span>
+        </div>
+        <div class="slider-row">
+          <label for="filter-beta">beta</label>
+          <input type="range" id="filter-beta" min="0" max="4" step="0.01" value="1.6">
+          <span id="val-beta" class="stat-value">1.6</span>
+        </div>
+        <div class="slider-row">
+          <label for="filter-dcutoff">dCutoff</label>
+          <input type="range" id="filter-dcutoff" min="0.1" max="5" step="0.1" value="1.0">
+          <span id="val-dcutoff" class="stat-value">1</span>
+        </div>
+      </div>
+
+      <!-- Session Recording Controls (Sprint 8) -->
+      <div id="recording-panel" class="panel">
+        <h3>Session Recording</h3>
+
+        <div id="recording-controls" class="control-group">
+          <button id="record-btn">Record</button>
+          <button id="stop-record-btn" disabled>Stop Recording</button>
+          <button id="save-json-btn" disabled>Save JSON</button>
+          <button id="save-csv-btn" disabled>Save CSV</button>
+        </div>
+
+        <div id="recording-stats">
+          <span id="recording-status">Not Recording</span>
+          <span id="frame-count">Frames: 0</span>
+          <span id="detection-rate">Detection: 0%</span>
+        </div>
+      </div>
+
+      <!-- Session Replay Controls (Sprint 8) -->
+      <div id="replay-panel" class="panel">
+        <h3>Session Replay</h3>
+
+        <div class="control-group">
+          <select id="session-select">
+            <option value="">-- Select Session --</option>
+          </select>
+          <button id="load-session-btn">Load</button>
+          <button id="refresh-sessions-btn">Refresh</button>
+        </div>
+
+        <div id="replay-controls" class="control-group">
+          <button id="replay-btn" disabled>Play</button>
+          <button id="pause-replay-btn" disabled>Pause</button>
+          <button id="stop-replay-btn" disabled>Stop</button>
+
+          <label for="replay-speed">Speed:</label>
+          <select id="replay-speed">
+            <option value="0.5">0.5x</option>
+            <option value="1.0" selected>1.0x</option>
+            <option value="2.0">2.0x</option>
+          </select>
+        </div>
+
+        <div id="replay-stats">
+          <span id="replay-status">No Session Loaded</span>
+          <span id="replay-progress">Progress: 0%</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

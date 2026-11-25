@@ -1,0 +1,378 @@
+:root {
+  --paper: #fff7f7;
+  --sun: #fbbf24;
+  --sky: #ef4444;
+  --sky-frame: #dc2626;
+  --untag-red: #dc2626;
+  --untag-red-dark: #991b1b;
+  --untag-gold: #fbbf24;
+  --coral: #fb923c;
+  --ink: #111113;
+  --muted: #52525b;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--paper);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.bg-dusk {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--paper);
+  overflow: hidden;
+  z-index: 1;
+}
+
+.bg-dusk::after {
+  content: '';
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  bottom: -6%;
+  height: 38%;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 55%, #b91c1c 100%);
+  border-top: 5px solid var(--untag-gold);
+  box-shadow: 0 -3px 0 var(--ink);
+  border-radius: 48% 52% 0 0 / 28px 36px 0 0;
+  transform: rotate(-1.2deg);
+}
+
+/* Saat kamera aktif (Tahap 1 Kalibrasi full-cam, Tahap 4 Arena Full-Screen + Kamera Kotak Kiri) */
+body.cam-active:not(.arena-page) .bg-dusk {
+  background-color: #111113;
+}
+body.cam-active:not(.arena-page) .bg-dusk::after {
+  display: none;
+}
+
+/* Halaman Arena (game.html): saat Kinestetik aktif, background tetap Full Arena Pop-Zine UNTAG! */
+body.arena-page.cam-active:not(.game-mode) .bg-dusk {
+  background-color: var(--paper);
+}
+body.arena-page.cam-active:not(.game-mode) .bg-dusk::after {
+  display: block;
+  height: 22%;
+}
+
+/* Kotak Kamera PiP di Samping Kiri untuk Mode Full Arena */
+.cam-box {
+  position: fixed;
+  left: 1.25rem;
+  top: 54%;
+  transform: translateY(-50%);
+  width: min(clamp(170px, 16.5vw, 240px), calc(72vh * 9 / 16));
+  z-index: 25;
+  display: none;
+  flex-direction: column;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 1rem;
+  box-shadow: 5px 5px 0 var(--ink);
+  overflow: hidden;
+  pointer-events: none;
+}
+body.arena-page.cam-active:not(.game-mode) .cam-box {
+  display: flex;
+}
+.cam-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding: 0.38rem 0.65rem;
+  background: var(--untag-red);
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-bottom: 2.5px solid var(--ink);
+}
+.cam-box-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  background: #faf8f2;
+  border-top: 2.5px solid var(--ink);
+}
+.cam-box-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  background: #111113;
+  overflow: hidden;
+}
+.cam-feed-box {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1) translateZ(0);
+  will-change: transform;
+}
+#cam-overlay {
+  /* Tidak perlu scaleX(-1) — koordinat poseLm sudah di-mirror di vision.js */
+}
+
+/* Halaman Khusus Game (Visual, Auditori, Hasil): tanpa kamera, latar bersih */
+body.game-mode #webcam {
+  opacity: 0 !important;
+}
+body.game-mode .bg-dusk {
+  background-color: var(--paper) !important;
+}
+body.game-mode .bg-dusk::after {
+  display: block !important;
+  height: 36%;
+}
+
+/* Webcam feed */
+.cam-feed {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  transform: scaleX(-1) translateZ(0);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  filter: contrast(1.04) brightness(0.98);
+  opacity: 0;
+  transition: opacity 0.45s cubic-bezier(.2,.8,.2,1);
+  z-index: 3;
+}
+
+body.cam-active .cam-feed {
+  opacity: 1;
+}
+body.dim-cam .cam-feed {
+  opacity: 0.14;
+  filter: grayscale(0.4) contrast(1.05) brightness(0.65);
+}
+
+#fx {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* HUD Atas */
+#hud {
+  background: rgba(250, 248, 242, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 2px solid var(--ink);
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+/* Saat kamera aktif (Tahap 1 Kalibrasi & Tahap 4 Kinestetik saat gameplay aktif):
+   Kamera Full Screen 100% tanpa terpotong atau tertutup strip putih header */
+body.cam-active:not(.game-mode):not(.kin-intro) #hud {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: none !important;
+  pointer-events: none;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+body.cam-active:not(.game-mode):not(.kin-intro) #hud > * {
+  pointer-events: auto;
+}
+
+body.cam-active:not(.game-mode):not(.kin-intro) #hud .brand-pill {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 0.25rem 0.9rem 0.25rem 0.5rem;
+  border-radius: 9999px;
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* Sembunyikan stepper di tengah saat kamera aktif agar area tengah atas terbuka penuh (tetap tampil saat intro kinestetik) */
+body.cam-active:not(.game-mode):not(.kin-intro) #stepper {
+  display: none !important;
+}
+
+/* Floating chips dan button saat kamera aktif */
+body.cam-active:not(.game-mode):not(.kin-intro) #hud .chip,
+body.cam-active:not(.game-mode):not(.kin-intro) #hud button {
+  box-shadow: 2.5px 2.5px 0 var(--ink);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Seimbangkan ruang konten Intro Kinestetik di kanan kotak kamera LIVE CV */
+@media (min-width: 900px) {
+  body.arena-page.kin-intro section[data-screen="intro"] > div {
+    padding-left: clamp(14.5rem, 19vw, 17.5rem);
+  }
+}
+
+.brand-badge {
+  font-family: 'Archivo Black', 'Plus Jakarta Sans', sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+.brand-badge span {
+  color: var(--sky-frame);
+}
+
+.step {
+  padding: 0.3rem 0.65rem;
+  border-radius: 9999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  border: 1.5px solid transparent;
+  transition: all 0.2s ease;
+  background: transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.step.done {
+  color: var(--ink);
+}
+.step.active {
+  color: #ffffff;
+  background: var(--untag-red);
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-weight: 700;
+}
+
+.chip {
+  padding: 0.3rem 0.7rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--ink);
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.chip::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #a1a1aa;
+  border: 1px solid var(--ink);
+  display: inline-block;
+}
+button.chip::before {
+  display: none;
+}
+.chip.on { background: #dcfce7; }
+.chip.on::before { background: #16a34a; }
+.chip.off { background: #fee2e2; }
+.chip.off::before { background: #dc2626; }
+
+/* Layar */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.screen.active {
+  display: flex;
+  animation: screenIn 0.3s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.glass-panel {
+  padding: 2.5rem 3rem;
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  border-radius: 1.25rem;
+  box-shadow: 6px 6px 0 var(--ink);
+  color: var(--ink);
+}
+
+/* Action Command Pill */
+.cmd-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.cmd-pill:hover, .cmd-pill:focus-visible {
+  background: var(--untag-gold);
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ink);
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+.cmd-pill:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.cmd-pill .cmd-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  background: var(--untag-red);
+  border: 2px solid var(--ink);
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+}
+
+/* Flash Efek */
+#flash { transition: opacity 0.3s ease; }
+#flash.good { background: radial-gradient(circle, rgba(34, 197, 94, 0.35), transparent 70%); opacity: 1; transition: none; }
+#flash.bad  { background: radial-gradient(circle, rgba(239, 68, 68, 0.4), transparent 70%);  opacity: 1; transition: none; }
+#flash.shutter { background: #ffffff; opacity: 0.96; transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen.active { animation: none; }
+}
+

@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wings — Pose-Controlled Flight Demo</title>
+
+  <!--
+    Import map: browsers can't resolve the bare "@mediapipe/tasks-vision"
+    specifier that poseDetector.js dynamically imports. Pinned to the same
+    version as the WASM assets loaded by FilesetResolver (see poseDetector.js).
+    Must appear before the module script. Copied from index.html.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #070b16;
+      --ink: #e8f0ff;
+      --muted: #8aa0c8;
+      --accent: #4ad6ff;
+      --good: #39d98a;
+      --bad: #ff5a6a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: radial-gradient(120% 80% at 50% -10%, #11203f 0%, var(--bg) 60%);
+      color: var(--ink);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    .wrap {
+      max-width: 1000px; margin: 0 auto; padding: 18px 16px 40px;
+    }
+    header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    h1 { font-size: 20px; margin: 0; letter-spacing: 0.5px; }
+    h1 span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 13px; }
+    .stage {
+      position: relative; margin-top: 14px;
+      border-radius: 14px; overflow: hidden;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(120,170,255,0.12);
+      aspect-ratio: 16 / 10; background: #040810;
+    }
+    #game { display: block; width: 100%; height: 100%; }
+    /* Pose overlay (camera + wing line) */
+    .overlay {
+      position: absolute; top: 12px; right: 12px;
+      width: 220px; border-radius: 10px; overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(120,170,255,0.25);
+      background: #000;
+    }
+    #overlay-canvas { display: block; width: 100%; height: auto; }
+    /* Start / status curtain */
+    .curtain {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: rgba(6,10,22,0.82); backdrop-filter: blur(3px);
+      text-align: center; padding: 24px;
+    }
+    .curtain.hidden { display: none; }
+    .card { max-width: 460px; }
+    .card h2 { margin: 0 0 8px; font-size: 22px; }
+    .card p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 8px 0; }
+    .steps { text-align: left; display: inline-block; color: var(--ink); font-size: 14px; line-height: 1.7; margin: 6px 0 16px; }
+    .steps b { color: var(--accent); }
+    button {
+      background: linear-gradient(180deg, #4ad6ff, #2aa6e6);
+      color: #04111f; border: 0; font-weight: 700; font-size: 16px;
+      padding: 12px 26px; border-radius: 999px; cursor: pointer;
+      box-shadow: 0 8px 24px rgba(74,214,255,0.35);
+    }
+    button:disabled { filter: grayscale(0.6) brightness(0.8); cursor: default; box-shadow: none; }
+    .err { color: var(--bad); font-size: 14px; min-height: 18px; margin-top: 10px; }
+    .foot { color: var(--muted); font-size: 12.5px; margin-top: 14px; line-height: 1.6; }
+    .foot code { color: var(--accent); background: rgba(74,214,255,0.08); padding: 1px 5px; border-radius: 4px; }
+    nav.demos { margin-left: auto; font-size: 13px; }
+    nav.demos a { color: var(--muted); text-decoration: none; margin-left: 14px; }
+    nav.demos a:hover { color: var(--accent); }
+    .cam-picker { margin: 2px 0 14px; font-size: 13px; color: var(--muted); }
+    .cam-picker select {
+      margin-left: 6px; max-width: 240px; font: inherit;
+      background: rgba(255,255,255,0.06); color: var(--ink);
+      border: 1px solid rgba(120,170,255,0.28); border-radius: 6px; padding: 5px 8px;
+    }
+    .cam-picker button {
+      margin-left: 8px; font: inherit; font-size: 13px; font-weight: 600;
+      padding: 5px 12px; border-radius: 6px; color: var(--ink);
+      background: rgba(120,170,255,0.14); border: 1px solid rgba(120,170,255,0.28);
+      box-shadow: none; cursor: pointer;
+    }
+    .cam-picker button:disabled { filter: grayscale(0.6) brightness(0.85); cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Wings <span>// pose-controlled flight</span></h1>
+      <span class="sub">Hold your arms out and tilt to steer — fly through the gates.</span>
+      <nav class="demos">
+        <a href="/">← pose lab</a>
+        <a href="/bird-game.html">Flapper (bird) →</a>
+      </nav>
+    </header>
+
+    <div class="stage">
+      <canvas id="game" width="960" height="600"></canvas>
+      <div class="overlay"><canvas id="overlay-canvas" width="220" height="165"></canvas></div>
+
+      <div id="tune-mount"></div>
+
+      <div class="curtain" id="curtain">
+        <div class="card">
+          <h2>Become the plane ✈</h2>
+          <div class="steps">
+            <div>1. Make sure your <b>shoulders and elbows</b> are in frame — hands can be off-screen.</div>
+            <div>2. Rest your elbows out a little — you are the <b>wings</b>.</div>
+            <div>3. <b>Tilt</b> the wings (dip one elbow) to bank and steer.</div>
+            <div>4. Line up and fly <b>through the gates</b> for points.</div>
+          </div>
+          <div class="cam-picker">
+            <label for="camera-select">Camera:</label>
+            <select id="camera-select"><option value="">Default camera</option></select>
+            <button id="detect-btn" type="button">Detect cameras</button>
+          </div>
+          <div class="cam-picker">
+            <label for="model-select">Model:</label>
+            <select id="model-select">
+              <option value="lite">Lite — fastest</option>
+              <option value="full">Full — balanced</option>
+              <option value="heavy">Heavy — most accurate</option>
+            </select>
+          </div>
+          <div><button id="start-btn">Start camera &amp; fly</button></div>
+          <div class="err" id="err"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      Concepts on show: pose + game in <b>one page</b> (DataBus-free, in-process — zero transport latency) ·
+      a <b>continuous control axis</b> derived from two keypoints (elbow-line tilt) ·
+      detection (camera-rate) <b>decoupled</b> from render (60&nbsp;fps). Pick the <code>lite</code>/<code>full</code>/<code>heavy</code> model and tune the 1-Euro jitter filter live.
+      A darker room caps the camera near 15&nbsp;fps — steering stays smooth because render is independent.
+    </div>
+  </div>
+
+  <video id="webcam" autoplay playsinline muted style="display:none"></video>
+
+  <!--
+    Boot canary (classic script, runs even when the module below dies).
+    If the module graph fails to load — e.g. a JS module request rejected by
+    server CORS, a 404, or a parse error — the Start button would otherwise be
+    silently dead. The module sets window.__gameBooted as its last statement;
+    a click without that flag means boot failed, so say so.
+  -->
+  <script>
+    document.getElementById('start-btn').addEventListener('click', () => {
+      if (!window.__gameBooted) {
+        document.getElementById('err').textContent =
+          'Game code failed to load — press F12 and check the Console/Network tabs. ' +
+          'Common cause: the server rejected the JS module requests (CORS) or the server is not running.';
+      }
+    });
+  </script>
+
+  <script type="module">
+    import { PoseDetector } from './js/poseDetector.js';
+    import { FilterPipeline } from './js/filterPipeline.js';
+    import { createTuningPanel } from './js/tuningPanel.js';
+
+    // ---- Tuning parameters (live-adjustable; see the panel) ---------------
+    const MODELS = {
+      lite:  '/models/pose_landmarker_lite.task',   // fastest, most jitter
+      full:  '/models/pose_landmarker_full.task',   // balanced
+      heavy: '/models/pose_landmarker_heavy.task'   // most accurate, heaviest
+    };
+    let MODEL = MODELS.lite; // actual choice is read from the Model picker at Start
+    // 1-Euro landmark smoothing (live-tunable). Lets lite/full/heavy all feel
+    // responsive: fast motion passes through, only resting jitter is damped.
+    let FILTER_ON = true;
+    let FILTER_MINCUTOFF = 1.0; // lower = smoother (more lag at rest)
+    let FILTER_BETA = 0.007;    // higher = snappier response to fast motion
+    const VIS_MIN = 0.4;       // min landmark visibility to trust a shoulder/elbow
+    const LANDMARK = { LSHOULDER: 11, RSHOULDER: 12, LELBOW: 13, RELBOW: 14 };
+    let THETA_MAX  = 0.5;      // rad of wing tilt that maps to full steering (~28 deg)
+    let DEADZONE   = 0.05;     // rad near level that reads as "fly straight"
+    let STEER_SIGN = -1;       // confirmed 2026-07 on real camera: default was mirrored (see DEVLOG)
+    let WINGS_SPAN = 0.15;     // min normalized x-gap between elbows to count as "arms out" (elbows sit closer together than wrists, hence the smaller default vs. the old wrist-based 0.40)
+    let PLANE_SPEED = 1.7;     // worldX units / sec at full tilt (steering acts as velocity)
+    let STEER_SMOOTH = 12;     // how fast displayed steering chases the target (per sec)
+    let GATE_SPEED = 0.42;     // z units / sec a gate travels toward you (z: 1 far -> 0 near)
+    let GATE_INTERVAL = 1.6;   // seconds between gate spawns
+    let GATE_HALF = 0.32;      // half-width of the gate opening, in worldX units (pass tolerance)
+
+    // ---- Elements --------------------------------------------------------
+    const game = document.getElementById('game');
+    const gctx = game.getContext('2d');
+    const ov = document.getElementById('overlay-canvas');
+    const octx = ov.getContext('2d');
+    const video = document.getElementById('webcam');
+    const curtain = document.getElementById('curtain');
+    const startBtn = document.getElementById('start-btn');
+    const errEl = document.getElementById('err');
+    const cameraSelect = document.getElementById('camera-select');
+    const detectBtn = document.getElementById('detect-btn');
+    const modelSelect = document.getElementById('model-select');
+    const W = game.width, H = game.height;
+
+    // Live tuning panel (persists to localStorage; "Copy values" to bake in).
+    createTuningPanel({
+      mount: document.getElementById('tune-mount'),
+      storageKey: 'flapper.flight.tune',
+      params: [
+        { type: 'header', label: 'Steering' },
+        { key: 'STEER_SIGN', label: 'Invert steering', type: 'toggle', get: () => STEER_SIGN < 0, set: v => STEER_SIGN = v ? -1 : 1 },
+        { key: 'THETA_MAX', label: 'Sensitivity', min: 0.2, max: 1.0, step: 0.02, get: () => THETA_MAX, set: v => THETA_MAX = v },
+        { key: 'PLANE_SPEED', label: 'Turn speed', min: 0.5, max: 3.5, step: 0.1, get: () => PLANE_SPEED, set: v => PLANE_SPEED = v },
+        { key: 'STEER_SMOOTH', label: 'Smoothing', min: 2, max: 25, step: 1, get: () => STEER_SMOOTH, set: v => STEER_SMOOTH = v },
+        { key: 'DEADZONE', label: 'Deadzone', min: 0, max: 0.2, step: 0.005, get: () => DEADZONE, set: v => DEADZONE = v },
+        { key: 'WINGS_SPAN', label: 'Elbows-out gate', min: 0.05, max: 0.35, step: 0.01, get: () => WINGS_SPAN, set: v => WINGS_SPAN = v },
+        { type: 'header', label: 'Gates' },
+        { key: 'GATE_SPEED', label: 'Gate speed', min: 0.2, max: 0.9, step: 0.02, get: () => GATE_SPEED, set: v => GATE_SPEED = v },
+        { key: 'GATE_INTERVAL', label: 'Gate spacing', min: 0.8, max: 3.5, step: 0.1, get: () => GATE_INTERVAL, set: v => GATE_INTERVAL = v },
+        { key: 'GATE_HALF', label: 'Gate width', min: 0.15, max: 0.5, step: 0.01, get: () => GATE_HALF, set: v => GATE_HALF = v },
+        { type: 'header', label: 'Jitter filter (1-Euro)' },
+        { key: 'FILTER_ON', label: 'Filter on', type: 'toggle', get: () => FILTER_ON, set: v => { FILTER_ON = v; if (pipeline) pipeline.setEnabled(v); } },
+        { key: 'FILTER_MINCUTOFF', label: 'Min cutoff', min: 0.1, max: 4, step: 0.1, get: () => FILTER_MINCUTOFF, set: v => { FILTER_MINCUTOFF = v; if (pipeline) pipeline.updateParams({ minCutoff: v }); } },
+        { key: 'FILTER_BETA', label: 'Beta (speed)', min: 0, max: 0.05, step: 0.001, get: () => FILTER_BETA, set: v => { FILTER_BETA = v; if (pipeline) pipeline.updateParams({ beta: v }); } }
+      ]
+    });
+
+    // ---- State -----------------------------------------------------------
+    let detector = null, pipeline = null, stream = null, running = false;
+    let useRVFC = false, lastDetectTs = 0, lastTs = 0;
+    let steering = 0, steeringTarget = 0, planeX = 0; // planeX, gate.worldX in [-1, 1]
+    let lastPose = null, wingsActive = false, lastTheta = 0, detFps = 0;
+    let gates = [], spawnTimer = 0, scrollPhase = 0;
+    let score = 0, missed = 0;
+    let flashColor = null, flashT = 0;
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    // ---- Camera picker ----------------------------------------------------
+    // Populate the <select> with connected video inputs. Device labels are
+    // blank until camera permission has been granted, so this runs once at
+    // load (IDs only) and again after the first successful getUserMedia
+    // (labels now present, since that grants permission). Preserves the
+    // current selection across refreshes.
+    async function refreshCameras() {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') return;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        if (cams.length === 0) return;
+        const selected = cameraSelect.value || '';
+        const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        cameraSelect.innerHTML = '<option value="">Default camera</option>' + cams.map((cam, i) => {
+          const label = cam.label || `Camera ${i + 1}`;
+          const sel = cam.deviceId === selected ? ' selected' : '';
+          return `<option value="${esc(cam.deviceId)}"${sel}>${esc(label)}</option>`;
+        }).join('');
+        if (selected && cams.some(c => c.deviceId === selected)) cameraSelect.value = selected;
+      } catch (e) { console.warn('[Wings] Could not enumerate cameras:', e.message); }
+    }
+    refreshCameras();
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+      navigator.mediaDevices.addEventListener('devicechange', refreshCameras);
+    }
+
+    // Prime camera permission *before* Start so real device labels/IDs load and
+    // the user can pick the right camera up front. Without this, labels stay
+    // blank until the first getUserMedia, forcing a start on whatever camera is
+    // default. We grab a throwaway stream only to unlock the labels, then stop it.
+    async function detectCameras() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        errEl.textContent = 'Camera needs https:// or http://localhost (not a LAN IP) — cannot list cameras here.';
+        return;
+      }
+      detectBtn.disabled = true;
+      const label = detectBtn.textContent;
+      detectBtn.textContent = 'Detecting…';
+      errEl.textContent = '';
+      let probe = null;
+      try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        await refreshCameras();
+      } catch (e) {
+        const map = {
+          NotAllowedError: 'Camera permission denied — allow it to list cameras.',
+          NotFoundError: 'No camera found.',
+          NotReadableError: 'Camera is already in use by another app.'
+        };
+        errEl.textContent = map[e.name] || ('Could not list cameras: ' + e.message);
+      } finally {
+        if (probe) probe.getTracks().forEach(t => t.stop());
+        detectBtn.disabled = false;
+        detectBtn.textContent = label;
+      }
+    }
+    detectBtn.addEventListener('click', detectCameras);
+
+    // ---- Model picker -----------------------------------------------------
+    // Chosen before Start (like the camera) and remembered across reloads, so
+    // comparing lite/full/heavy is just: pick, reload, play. The tuned filter
+    // values persist too, so an A/B is a fair one.
+    const MODEL_KEY = 'flapper.flight.model';
+    try {
+      const savedModel = localStorage.getItem(MODEL_KEY);
+      if (savedModel && MODELS[savedModel]) modelSelect.value = savedModel;
+    } catch (e) { /* ignore */ }
+    modelSelect.addEventListener('change', () => {
+      try { localStorage.setItem(MODEL_KEY, modelSelect.value); } catch (e) { /* ignore */ }
+    });
+
+    // ---- Start / boot ----------------------------------------------------
+    startBtn.addEventListener('click', start);
+
+    async function start() {
+      startBtn.disabled = true;
+      errEl.textContent = '';
+      try {
+        // Browsers expose the camera only in secure contexts (https:// or
+        // http://localhost). Served over a LAN IP, mediaDevices is undefined.
+        if (!navigator.mediaDevices?.getUserMedia) {
+          const e = new Error('the camera only works on https:// or http://localhost — open this page as localhost on the machine running the server (or use an HTTPS tunnel), not via a LAN IP.');
+          e.name = 'InsecureContextError';
+          throw e;
+        }
+        startBtn.textContent = 'Opening camera…';
+        // Pin the picked camera by deviceId; empty selection falls back to
+        // the front-facing default. If the picked device has vanished (e.g.
+        // unplugged) or can't satisfy the constraints, retry once without it
+        // rather than failing outright.
+        const deviceId = cameraSelect.value || null;
+        const source = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' };
+        const videoConstraints = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, ...source };
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+        } catch (e) {
+          if (deviceId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: 'user' },
+              audio: false
+            });
+          } else {
+            throw e;
+          }
+        }
+        refreshCameras(); // labels are populated now that permission is granted
+        video.srcObject = stream;
+        await new Promise((res, rej) => {
+          video.onloadedmetadata = () => { video.play(); res(); };
+          video.onerror = () => rej(new Error('video failed to load'));
+          setTimeout(() => rej(new Error('camera timed out')), 6000);
+        });
+
+        MODEL = MODELS[modelSelect.value] || MODELS.lite;
+        startBtn.textContent = 'Loading model…';
+        detector = new PoseDetector({
+          detector: {
+            modelPath: MODEL, runningMode: 'VIDEO', numPoses: 1,
+            minDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5
+          },
+          performance: { enableGpu: true },
+          coordinates: { normalized: true, pixel: false, world: false }
+        });
+        await detector.initialize();
+
+        // 1-Euro smoothing on the landmarks, seeded from the current panel values.
+        pipeline = new FilterPipeline({
+          filtering: { enabled: FILTER_ON, oneEuroConfig: { minCutoff: FILTER_MINCUTOFF, beta: FILTER_BETA, dCutoff: 1.0 } },
+          performance: { targetFps: 30 }
+        });
+
+        running = true;
+        curtain.classList.add('hidden');
+        lastTs = performance.now();
+
+        // Detection runs once per CAMERA frame (rVFC); render runs at 60fps (rAF).
+        if (typeof video.requestVideoFrameCallback === 'function') {
+          useRVFC = true;
+          const onCam = () => { if (running) { runDetection(); video.requestVideoFrameCallback(onCam); } };
+          video.requestVideoFrameCallback(onCam);
+        }
+        requestAnimationFrame(gameLoop);
+      } catch (e) {
+        const map = {
+          NotAllowedError: 'Camera permission denied — allow it and retry.',
+          NotFoundError: 'No camera found.',
+          NotReadableError: 'Camera is already in use by another app.'
+        };
+        errEl.textContent = map[e.name] || ('Could not start: ' + e.message);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start camera & fly';
+        console.error('[Wings] start failed', e);
+      }
+    }
+
+    // ---- Detection: derive the steering axis from the elbow line ---------
+    function runDetection() {
+      if (!detector || video.readyState < 2) return;
+      let result;
+      try { result = detector.detect(video, performance.now()); }
+      catch (e) { console.error('[Wings] detect error', e); return; }
+      if (pipeline) result = pipeline.process(result);
+      detFps = result.fps || detFps;
+
+      if (result.detected && result.pose && result.pose.normalized) {
+        lastPose = result.pose.normalized;
+        updateSteering(lastPose);
+      } else {
+        lastPose = null; wingsActive = false; steeringTarget = 0;
+      }
+    }
+
+    function updateSteering(n) {
+      // Elbows, not wrists: same "wing line" idea, but the elbow is proximal
+      // enough to the torso that you don't need to reach your hands out to the
+      // frame edges to be seen — arms can stay bent and close to your body.
+      const le = n[LANDMARK.LELBOW], re = n[LANDMARK.RELBOW];
+      const visOk = le.visibility > VIS_MIN && re.visibility > VIS_MIN;
+      const span = Math.abs(le.x - re.x);
+      wingsActive = visOk && span > WINGS_SPAN;
+      if (!wingsActive) { steeringTarget = 0; return; }
+
+      // Work in mirrored (selfie) screen space so it matches the overlay: a hand
+      // dipped on the screen-right banks right. Order the two elbows by screen-x
+      // so the wing vector always points left->right and theta's sign is stable.
+      const a = { x: 1 - le.x, y: le.y }, b = { x: 1 - re.x, y: re.y };
+      const [p1, p2] = a.x <= b.x ? [a, b] : [b, a];
+      const theta = Math.atan2(p2.y - p1.y, p2.x - p1.x); // + when screen-right elbow is lower
+      lastTheta = theta;
+      let s = Math.abs(theta) < DEADZONE ? 0 : theta / THETA_MAX;
+      steeringTarget = STEER_SIGN * clamp(s, -1, 1);
+    }
+
+    // ---- Game loop -------------------------------------------------------
+    function gameLoop(ts) {
+      if (!running) return;
+      let dt = (ts - lastTs) / 1000; lastTs = ts;
+      dt = clamp(dt, 0, 0.05);
+
+      // rVFC unavailable (e.g. some headless tabs): poll detection at ~30Hz here.
+      if (!useRVFC && ts - lastDetectTs > 30) { lastDetectTs = ts; runDetection(); }
+
+      // Smooth steering toward the pose target; integrate as lateral velocity.
+      // Sign is negated to match drawPlane's bank (-steering*0.5, confirmed
+      // correct on a real camera): a real plane turns TOWARD the side that
+      // dips, so travel must track the same side as the visual bank, not
+      // steering's raw sign directly.
+      steering += (steeringTarget - steering) * Math.min(1, dt * STEER_SMOOTH);
+      planeX = clamp(planeX - steering * PLANE_SPEED * dt, -1, 1);
+
+      // Spawn + advance gates; resolve a gate the moment it reaches the plane.
+      spawnTimer += dt;
+      if (spawnTimer >= GATE_INTERVAL) { spawnTimer -= GATE_INTERVAL; gates.push({ worldX: Math.random() * 1.3 - 0.65, z: 1, done: false }); }
+      for (const g of gates) {
+        g.z -= GATE_SPEED * dt;
+        if (!g.done && g.z <= 0.015) {
+          g.done = true;
+          if (Math.abs(planeX - g.worldX) < GATE_HALF) { score++; flash('var(--good)', '#39d98a'); }
+          else { missed++; flash('var(--bad)', '#ff5a6a'); }
+        }
+      }
+      gates = gates.filter(g => !g.done);
+      scrollPhase = (scrollPhase + dt * GATE_SPEED) % 1;
+      if (flashT > 0) flashT -= dt;
+
+      renderGame();
+      renderOverlay();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function flash(_unused, color) { flashColor = color; flashT = 0.5; }
+
+    // ---- Pseudo-3D projection: worldX in [-1,1], z in [0 near, 1 far] -----
+    const HORIZON_Y = H * 0.30, BASE_Y = H * 0.90, HALF_SPREAD = W * 0.46;
+    function project(worldX, z) {
+      const persp = 0.18 + 0.82 * (1 - z);            // near=1.0, far=0.18
+      return {
+        x: W / 2 + worldX * HALF_SPREAD * persp,
+        y: BASE_Y + (HORIZON_Y - BASE_Y) * z,
+        scale: persp
+      };
+    }
+
+    // ---- Render game -----------------------------------------------------
+    function renderGame() {
+      // Sky
+      const sky = gctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#0a1b3d'); sky.addColorStop(0.5, '#163a6e'); sky.addColorStop(0.5001, '#0a1330'); sky.addColorStop(1, '#050a18');
+      gctx.fillStyle = sky; gctx.fillRect(0, 0, W, H);
+
+      // Horizon glow
+      gctx.fillStyle = 'rgba(120,180,255,0.18)';
+      gctx.fillRect(0, HORIZON_Y - 2, W, 4);
+
+      // Ground perspective lines (longitudinal -> vanishing point)
+      gctx.strokeStyle = 'rgba(90,140,220,0.25)'; gctx.lineWidth = 1;
+      for (let i = -6; i <= 6; i++) {
+        const wx = i / 6;
+        const near = project(wx, 0), far = project(wx, 1);
+        gctx.beginPath(); gctx.moveTo(near.x, near.y); gctx.lineTo(far.x, far.y); gctx.stroke();
+      }
+      // Lateral scrolling lines (speed sensation)
+      for (let k = 0; k < 7; k++) {
+        const z = ((k + scrollPhase) / 7); // 0..1
+        const y = BASE_Y + (HORIZON_Y - BASE_Y) * z;
+        const a = 0.30 * (1 - z);
+        gctx.strokeStyle = `rgba(90,140,220,${a.toFixed(3)})`;
+        gctx.beginPath(); gctx.moveTo(0, y); gctx.lineTo(W, y); gctx.stroke();
+      }
+
+      // Gates (far first so near draws over)
+      for (const g of [...gates].sort((a, b) => b.z - a.z)) {
+        const p = project(g.worldX, g.z);
+        const rx = GATE_HALF * HALF_SPREAD * p.scale;
+        const ry = rx * 0.62;
+        const aligned = Math.abs(planeX - g.worldX) < GATE_HALF;
+        const col = aligned ? '57,217,138' : '255,196,84';
+        gctx.lineWidth = Math.max(2, 8 * p.scale);
+        gctx.strokeStyle = `rgba(${col},${(0.35 + 0.6 * (1 - g.z)).toFixed(2)})`;
+        gctx.beginPath(); gctx.ellipse(p.x, p.y - ry, rx, ry, 0, 0, Math.PI * 2); gctx.stroke();
+        // posts
+        gctx.beginPath();
+        gctx.moveTo(p.x - rx, p.y - ry); gctx.lineTo(p.x - rx, p.y + ry * 0.4);
+        gctx.moveTo(p.x + rx, p.y - ry); gctx.lineTo(p.x + rx, p.y + ry * 0.4);
+        gctx.stroke();
+      }
+
+      // Plane (banks with steering)
+      const pp = project(planeX, 0);
+      drawPlane(pp.x, pp.y, -steering * 0.5);
+
+      // HUD
+      gctx.fillStyle = '#e8f0ff'; gctx.font = '600 22px Segoe UI, sans-serif'; gctx.textBaseline = 'top';
+      gctx.fillText(`Gates  ${score}`, 18, 16);
+      gctx.fillStyle = '#8aa0c8'; gctx.font = '500 14px Segoe UI, sans-serif';
+      gctx.fillText(`missed ${missed}`, 20, 44);
+      gctx.fillText(`cam ${Math.round(detFps)} fps`, 20, 64);
+
+      // Steering indicator bar
+      const bw = 220, bx = (W - bw) / 2, by = H - 26;
+      gctx.fillStyle = 'rgba(255,255,255,0.10)'; roundRect(bx, by, bw, 8, 4); gctx.fill();
+      const cx = bx + bw / 2;
+      gctx.fillStyle = wingsActive ? '#4ad6ff' : '#637097';
+      const sx = cx + steering * (bw / 2 - 6);
+      gctx.beginPath(); gctx.arc(sx, by + 4, 7, 0, Math.PI * 2); gctx.fill();
+
+      // "Spread your wings" hint
+      if (!wingsActive) {
+        gctx.fillStyle = 'rgba(255,255,255,0.85)'; gctx.font = '600 18px Segoe UI, sans-serif';
+        gctx.textAlign = 'center';
+        gctx.fillText(lastPose ? 'Rest your elbows out like wings' : 'Make sure your shoulders & elbows are visible', W / 2, H * 0.16);
+        gctx.textAlign = 'left';
+      }
+
+      // Pass / miss flash vignette
+      if (flashT > 0 && flashColor) {
+        const a = (flashT / 0.5) * 0.35;
+        const vg = gctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+        vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, hexA(flashColor, a));
+        gctx.fillStyle = vg; gctx.fillRect(0, 0, W, H);
+      }
+    }
+
+    function drawPlane(x, y, bank) {
+      gctx.save(); gctx.translate(x, y); gctx.rotate(bank);
+      gctx.fillStyle = '#eaf4ff';
+      gctx.strokeStyle = 'rgba(74,214,255,0.9)'; gctx.lineWidth = 2;
+      // fuselage
+      gctx.beginPath(); gctx.moveTo(0, -26); gctx.lineTo(7, 14); gctx.lineTo(0, 8); gctx.lineTo(-7, 14); gctx.closePath();
+      gctx.fill(); gctx.stroke();
+      // wings
+      gctx.beginPath(); gctx.moveTo(-34, 6); gctx.lineTo(0, -6); gctx.lineTo(34, 6); gctx.lineTo(0, 2); gctx.closePath();
+      gctx.fillStyle = '#cfe6ff'; gctx.fill(); gctx.stroke();
+      gctx.restore();
+    }
+
+    // ---- Render overlay (camera + wing line) -----------------------------
+    function renderOverlay() {
+      const ow = ov.width, oh = ov.height;
+      octx.save();
+      octx.translate(ow, 0); octx.scale(-1, 1);          // mirror like a selfie
+      if (video.readyState >= 2) octx.drawImage(video, 0, 0, ow, oh);
+      else { octx.fillStyle = '#000'; octx.fillRect(0, 0, ow, oh); }
+      octx.restore();
+
+      if (lastPose) {
+        const pt = (i) => ({ x: (1 - lastPose[i].x) * ow, y: lastPose[i].y * oh, v: lastPose[i].visibility });
+        const ls = pt(LANDMARK.LSHOULDER), rs = pt(LANDMARK.RSHOULDER);
+        const lep = pt(LANDMARK.LELBOW), rep = pt(LANDMARK.RELBOW);
+        // shoulders
+        octx.strokeStyle = 'rgba(255,255,255,0.5)'; octx.lineWidth = 2;
+        line(ls, rs);
+        // upper arms
+        octx.strokeStyle = wingsActive ? 'rgba(74,214,255,0.95)' : 'rgba(255,180,90,0.8)';
+        octx.lineWidth = 3; line(ls, lep); line(rs, rep);
+        // wing line (the steering axis) -- shoulder-to-elbow reach, not the full arm
+        octx.strokeStyle = wingsActive ? '#4ad6ff' : 'rgba(255,180,90,0.9)';
+        octx.lineWidth = 3; line(lep, rep);
+        for (const p of [lep, rep]) { octx.fillStyle = '#fff'; octx.beginPath(); octx.arc(p.x, p.y, 4, 0, Math.PI * 2); octx.fill(); }
+      }
+      // status text
+      octx.fillStyle = wingsActive ? '#39d98a' : '#ffb45a';
+      octx.font = '600 12px Segoe UI, sans-serif'; octx.textBaseline = 'bottom';
+      octx.fillText(wingsActive ? `WINGS · ${(lastTheta * 57.3).toFixed(0)}°` : 'arms out →', 8, oh - 6);
+    }
+    function line(a, b) { octx.beginPath(); octx.moveTo(a.x, a.y); octx.lineTo(b.x, b.y); octx.stroke(); }
+
+    // ---- small helpers ---------------------------------------------------
+    function roundRect(x, y, w, h, r) { gctx.beginPath(); gctx.moveTo(x + r, y); gctx.arcTo(x + w, y, x + w, y + h, r); gctx.arcTo(x + w, y + h, x, y + h, r); gctx.arcTo(x, y + h, x, y, r); gctx.arcTo(x, y, x + w, y, r); gctx.closePath(); }
+    function hexA(hex, a) {
+      const m = hex.replace('#', ''); const n = parseInt(m, 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+    }
+
+    window.__gameBooted = true; // boot canary — see the classic script above
+  </script>
+</body>
+</html>

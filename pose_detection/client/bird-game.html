@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flapper — Become a Bird</title>
+
+  <!-- Import map: resolves the bare "@mediapipe/tasks-vision" specifier that
+       poseDetector.js dynamically imports. Pinned to match its WASM assets. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #0a0712; --ink: #f3ecff; --muted: #b09fce;
+      --accent: #ffb84a; --good: #57d98a; --bad: #ff6a8a; --sync: #4ad6ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; color: var(--ink);
+      background: radial-gradient(120% 80% at 50% -10%, #2a1740 0%, var(--bg) 60%);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 18px 16px 40px; }
+    header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    h1 { font-size: 20px; margin: 0; letter-spacing: 0.5px; }
+    h1 span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 13px; }
+    .stage { position: relative; margin-top: 14px; border-radius: 14px; overflow: hidden;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(180,140,255,0.14);
+      aspect-ratio: 16 / 10; background: #07040f; }
+    #game { display: block; width: 100%; height: 100%; }
+    .overlay { position: absolute; top: 12px; right: 12px; width: 230px; border-radius: 10px;
+      overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(180,140,255,0.25); background: #000; }
+    #overlay-canvas { display: block; width: 100%; height: auto; }
+    .curtain { position: absolute; inset: 0; display: grid; place-items: center;
+      background: rgba(10,7,18,0.84); backdrop-filter: blur(3px); text-align: center; padding: 24px; }
+    .curtain.hidden { display: none; }
+    .card { max-width: 470px; }
+    .card h2 { margin: 0 0 8px; font-size: 22px; }
+    .steps { text-align: left; display: inline-block; font-size: 14px; line-height: 1.7; margin: 6px 0 16px; }
+    .steps b { color: var(--accent); }
+    button { background: linear-gradient(180deg, #ffb84a, #f0902a); color: #2a1400; border: 0;
+      font-weight: 700; font-size: 16px; padding: 12px 26px; border-radius: 999px; cursor: pointer;
+      box-shadow: 0 8px 24px rgba(255,160,60,0.35); }
+    button:disabled { filter: grayscale(0.6) brightness(0.8); cursor: default; box-shadow: none; }
+    .err { color: var(--bad); font-size: 14px; min-height: 18px; margin-top: 10px; }
+    nav.demos { margin-left: auto; font-size: 13px; }
+    nav.demos a { color: var(--muted); text-decoration: none; margin-left: 14px; }
+    nav.demos a:hover { color: var(--accent); }
+    .foot { color: var(--muted); font-size: 12.5px; margin-top: 14px; line-height: 1.6; }
+    .foot code { color: var(--accent); background: rgba(255,184,74,0.08); padding: 1px 5px; border-radius: 4px; }
+    .cam-picker { margin: 2px 0 14px; font-size: 13px; color: var(--muted); }
+    .cam-picker select {
+      margin-left: 6px; max-width: 240px; font: inherit;
+      background: rgba(255,255,255,0.06); color: var(--ink);
+      border: 1px solid rgba(180,140,255,0.28); border-radius: 6px; padding: 5px 8px;
+    }
+    .cam-picker button {
+      margin-left: 8px; font: inherit; font-size: 13px; font-weight: 600;
+      padding: 5px 12px; border-radius: 6px; color: var(--ink);
+      background: rgba(180,140,255,0.14); border: 1px solid rgba(180,140,255,0.28);
+      box-shadow: none; cursor: pointer;
+    }
+    .cam-picker button:disabled { filter: grayscale(0.6) brightness(0.85); cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Flapper <span>// become a bird</span></h1>
+      <span class="sub">Flap both arms together for lift — bank to steer — fly through the gates.</span>
+      <nav class="demos">
+        <a href="/">← pose lab</a>
+        <a href="/flight-game.html">Wings (plane) →</a>
+      </nav>
+    </header>
+
+    <div class="stage">
+      <canvas id="game" width="960" height="600"></canvas>
+      <div class="overlay"><canvas id="overlay-canvas" width="230" height="173"></canvas></div>
+
+      <div id="tune-mount"></div>
+
+      <div class="curtain" id="curtain">
+        <div class="card">
+          <h2>Spread your wings 🦅</h2>
+          <div class="steps">
+            <div>1. Stand back so your <b>shoulders, elbows and hips</b> are in frame — hands can be off-screen.</div>
+            <div>2. <b>Flap</b>: sweep both arms down together from up high — a synced</div>
+            <div style="padding-left:18px">downstroke gives <b>lift</b>. One arm alone does nothing.</div>
+            <div>3. Gravity pulls you down — keep flapping to stay airborne.</div>
+            <div>4. <b>Tilt</b> (one wing low) to bank and steer. Fly <b>through the gates</b>.</div>
+          </div>
+          <div class="cam-picker">
+            <label for="camera-select">Camera:</label>
+            <select id="camera-select"><option value="">Default camera</option></select>
+            <button id="detect-btn" type="button">Detect cameras</button>
+          </div>
+          <div class="cam-picker">
+            <label for="model-select">Model:</label>
+            <select id="model-select">
+              <option value="lite">Lite — fastest</option>
+              <option value="full">Full — balanced</option>
+              <option value="heavy">Heavy — most accurate</option>
+            </select>
+          </div>
+          <div><button id="start-btn">Start camera &amp; fly</button></div>
+          <div class="err" id="err"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      New concept vs the plane: lift from a <b>synchronized downstroke</b>, detected as the
+      <b>change in shoulder angle</b> (elbow&rarr;shoulder&rarr;hip) sweeping high&rarr;low on <i>both</i> arms within ~0.3&nbsp;s.
+      Banking (elbow-line tilt) and flapping (symmetric vertical sweep) are orthogonal signals, so you can do both.
+      Detection runs at camera rate; physics + render run at 60&nbsp;fps. Pick the <code>lite</code>/<code>full</code>/<code>heavy</code> model and tune the 1-Euro jitter filter live.
+    </div>
+  </div>
+
+  <video id="webcam" autoplay playsinline muted style="display:none"></video>
+
+  <!--
+    Boot canary (classic script, runs even when the module below dies).
+    If the module graph fails to load — e.g. a JS module request rejected by
+    server CORS, a 404, or a parse error — the Start button would otherwise be
+    silently dead. The module sets window.__gameBooted as its last statement;
+    a click without that flag means boot failed, so say so.
+  -->
+  <script>
+    document.getElementById('start-btn').addEventListener('click', () => {
+      if (!window.__gameBooted) {
+        document.getElementById('err').textContent =
+          'Game code failed to load — press F12 and check the Console/Network tabs. ' +
+          'Common cause: the server rejected the JS module requests (CORS) or the server is not running.';
+      }
+    });
+  </script>
+
+  <script type="module">
+    import { PoseDetector } from './js/poseDetector.js';
+    import { FilterPipeline } from './js/filterPipeline.js';
+    import { createTuningPanel } from './js/tuningPanel.js';
+
+    // ---- Tuning parameters (live-adjustable; see the panel) ---------------
+    const MODELS = {
+      lite:  '/models/pose_landmarker_lite.task',   // fastest, most jitter
+      full:  '/models/pose_landmarker_full.task',   // balanced
+      heavy: '/models/pose_landmarker_heavy.task'   // most accurate, heaviest
+    };
+    let MODEL = MODELS.lite; // actual choice is read from the Model picker at Start
+    // 1-Euro landmark smoothing (live-tunable). Lets lite/full/heavy all feel
+    // responsive: fast motion (a real flap) passes through, only resting jitter
+    // is damped — so the filter reduces false flaps without slowing real ones.
+    let FILTER_ON = true;
+    let FILTER_MINCUTOFF = 1.0; // lower = smoother (more lag at rest)
+    let FILTER_BETA = 0.007;    // higher = snappier response to fast motion
+    const VIS_MIN = 0.4;                         // min landmark visibility to trust a joint
+    const L = { LSHO: 11, RSHO: 12, LELB: 13, RELB: 14, LHIP: 23, RHIP: 24 }; // wrists unused now (see updateBank)
+    // Banking (reused from the plane; elbow-line tilt, not wrist — see updateBank)
+    let THETA_MAX = 0.5, DEADZONE = 0.06, STEER_SIGN = -1; // confirmed 2026-07 on real camera: default was mirrored (see DEVLOG)
+    let WINGS_SPAN = 0.15;     // min normalized x-gap between elbows (was wrist-based 0.34)
+    let TURN_SPEED = 1.4, STEER_SMOOTH = 6;     // slower smoothing: flap wobble shouldn't jerk the turn
+    // Flapping
+    let SH_HIGH = 95, SH_LOW = 50;              // shoulder abduction deg: arm up vs arm down
+    let SYNC_WINDOW = 0.32;                     // s - both downstrokes must land within this
+    let FLAP_IMPULSE = 0.62;                    // upward velocity added per synced flap
+    let GRAVITY = 1.0;                          // altitude/s^2 pulling down
+    // Gates
+    let GATE_SPEED = 0.40, GATE_INTERVAL = 2.0, GATE_HALF_X = 0.34, GATE_HALF_Y = 0.22;
+
+    // ---- Elements --------------------------------------------------------
+    const game = document.getElementById('game'), gctx = game.getContext('2d');
+    const ov = document.getElementById('overlay-canvas'), octx = ov.getContext('2d');
+    const video = document.getElementById('webcam');
+    const curtain = document.getElementById('curtain');
+    const startBtn = document.getElementById('start-btn');
+    const errEl = document.getElementById('err');
+    const cameraSelect = document.getElementById('camera-select');
+    const detectBtn = document.getElementById('detect-btn');
+    const modelSelect = document.getElementById('model-select');
+    const W = game.width, H = game.height;
+
+    // Live tuning panel (persists to localStorage; "Copy values" to bake in).
+    createTuningPanel({
+      mount: document.getElementById('tune-mount'),
+      storageKey: 'flapper.bird.tune',
+      params: [
+        { type: 'header', label: 'Flapping (lift)' },
+        { key: 'SH_HIGH', label: 'Wing-up angle', min: 70, max: 140, step: 1, get: () => SH_HIGH, set: v => SH_HIGH = v },
+        { key: 'SH_LOW', label: 'Wing-down angle', min: 20, max: 80, step: 1, get: () => SH_LOW, set: v => SH_LOW = v },
+        { key: 'SYNC_WINDOW', label: 'Sync window (s)', min: 0.1, max: 0.6, step: 0.02, get: () => SYNC_WINDOW, set: v => SYNC_WINDOW = v },
+        { key: 'FLAP_IMPULSE', label: 'Lift per flap', min: 0.3, max: 1.0, step: 0.02, get: () => FLAP_IMPULSE, set: v => FLAP_IMPULSE = v },
+        { key: 'GRAVITY', label: 'Gravity', min: 0.4, max: 2.0, step: 0.05, get: () => GRAVITY, set: v => GRAVITY = v },
+        { type: 'header', label: 'Steering (bank)' },
+        { key: 'STEER_SIGN', label: 'Invert steering', type: 'toggle', get: () => STEER_SIGN < 0, set: v => STEER_SIGN = v ? -1 : 1 },
+        { key: 'THETA_MAX', label: 'Sensitivity', min: 0.2, max: 1.0, step: 0.02, get: () => THETA_MAX, set: v => THETA_MAX = v },
+        { key: 'TURN_SPEED', label: 'Turn speed', min: 0.5, max: 3.0, step: 0.1, get: () => TURN_SPEED, set: v => TURN_SPEED = v },
+        { key: 'STEER_SMOOTH', label: 'Smoothing', min: 2, max: 20, step: 1, get: () => STEER_SMOOTH, set: v => STEER_SMOOTH = v },
+        { key: 'DEADZONE', label: 'Deadzone', min: 0, max: 0.2, step: 0.005, get: () => DEADZONE, set: v => DEADZONE = v },
+        { key: 'WINGS_SPAN', label: 'Elbows-out gate', min: 0.05, max: 0.35, step: 0.01, get: () => WINGS_SPAN, set: v => WINGS_SPAN = v },
+        { type: 'header', label: 'Gates' },
+        { key: 'GATE_SPEED', label: 'Gate speed', min: 0.2, max: 0.9, step: 0.02, get: () => GATE_SPEED, set: v => GATE_SPEED = v },
+        { key: 'GATE_INTERVAL', label: 'Gate spacing', min: 0.8, max: 3.5, step: 0.1, get: () => GATE_INTERVAL, set: v => GATE_INTERVAL = v },
+        { key: 'GATE_HALF_X', label: 'Gate width', min: 0.15, max: 0.5, step: 0.01, get: () => GATE_HALF_X, set: v => GATE_HALF_X = v },
+        { key: 'GATE_HALF_Y', label: 'Gate height', min: 0.12, max: 0.4, step: 0.01, get: () => GATE_HALF_Y, set: v => GATE_HALF_Y = v },
+        { type: 'header', label: 'Jitter filter (1-Euro)' },
+        { key: 'FILTER_ON', label: 'Filter on', type: 'toggle', get: () => FILTER_ON, set: v => { FILTER_ON = v; if (pipeline) pipeline.setEnabled(v); } },
+        { key: 'FILTER_MINCUTOFF', label: 'Min cutoff', min: 0.1, max: 4, step: 0.1, get: () => FILTER_MINCUTOFF, set: v => { FILTER_MINCUTOFF = v; if (pipeline) pipeline.updateParams({ minCutoff: v }); } },
+        { key: 'FILTER_BETA', label: 'Beta (speed)', min: 0, max: 0.05, step: 0.001, get: () => FILTER_BETA, set: v => { FILTER_BETA = v; if (pipeline) pipeline.updateParams({ beta: v }); } }
+      ]
+    });
+
+    // ---- State -----------------------------------------------------------
+    let detector = null, pipeline = null, stream = null, running = false, useRVFC = false, lastDetectTs = 0, lastTs = 0;
+    let ASPECT = 4 / 3;
+    let steering = 0, steeringTarget = 0, birdX = 0;
+    let alt = 0.5, valt = 0;                       // altitude 0..1 and its velocity
+    const armed = { L: false, R: false }, lastDown = { L: 0, R: 0 }, shAng = { L: null, R: null };
+    let liftCount = 0, flapPulse = 0, syncFlash = 0;
+    let lastPose = null, wingsActive = false, bankTheta = 0, detFps = 0;
+    let gates = [], spawnTimer = 0, scrollPhase = 0, score = 0, missed = 0;
+    let flashColor = null, flashT = 0;
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    // ---- Camera picker ----------------------------------------------------
+    // Populate the <select> with connected video inputs. Device labels are
+    // blank until camera permission has been granted, so this runs once at
+    // load (IDs only) and again after the first successful getUserMedia
+    // (labels now present, since that grants permission). Preserves the
+    // current selection across refreshes.
+    async function refreshCameras() {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') return;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        if (cams.length === 0) return;
+        const selected = cameraSelect.value || '';
+        const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        cameraSelect.innerHTML = '<option value="">Default camera</option>' + cams.map((cam, i) => {
+          const label = cam.label || `Camera ${i + 1}`;
+          const sel = cam.deviceId === selected ? ' selected' : '';
+          return `<option value="${esc(cam.deviceId)}"${sel}>${esc(label)}</option>`;
+        }).join('');
+        if (selected && cams.some(c => c.deviceId === selected)) cameraSelect.value = selected;
+      } catch (e) { console.warn('[Flapper] Could not enumerate cameras:', e.message); }
+    }
+    refreshCameras();
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+      navigator.mediaDevices.addEventListener('devicechange', refreshCameras);
+    }
+
+    // Prime camera permission *before* Start so real device labels/IDs load and
+    // the user can pick the right camera up front. Without this, labels stay
+    // blank until the first getUserMedia, forcing a start on whatever camera is
+    // default. We grab a throwaway stream only to unlock the labels, then stop it.
+    async function detectCameras() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        errEl.textContent = 'Camera needs https:// or http://localhost (not a LAN IP) - cannot list cameras here.';
+        return;
+      }
+      detectBtn.disabled = true;
+      const label = detectBtn.textContent;
+      detectBtn.textContent = 'Detecting...';
+      errEl.textContent = '';
+      let probe = null;
+      try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        await refreshCameras();
+      } catch (e) {
+        const map = {
+          NotAllowedError: 'Camera permission denied - allow it to list cameras.',
+          NotFoundError: 'No camera found.',
+          NotReadableError: 'Camera is already in use by another app.'
+        };
+        errEl.textContent = map[e.name] || ('Could not list cameras: ' + e.message);
+      } finally {
+        if (probe) probe.getTracks().forEach(t => t.stop());
+        detectBtn.disabled = false;
+        detectBtn.textContent = label;
+      }
+    }
+    detectBtn.addEventListener('click', detectCameras);
+
+    // ---- Model picker -----------------------------------------------------
+    // Chosen before Start (like the camera) and remembered across reloads, so
+    // comparing lite/full/heavy is just: pick, reload, play. The tuned filter
+    // values persist too, so an A/B is a fair one.
+    const MODEL_KEY = 'flapper.bird.model';
+    try {
+      const savedModel = localStorage.getItem(MODEL_KEY);
+      if (savedModel && MODELS[savedModel]) modelSelect.value = savedModel;
+    } catch (e) { /* ignore */ }
+    modelSelect.addEventListener('change', () => {
+      try { localStorage.setItem(MODEL_KEY, modelSelect.value); } catch (e) { /* ignore */ }
+    });
+
+    // ---- Boot ------------------------------------------------------------
+    startBtn.addEventListener('click', start);
+
+    async function start() {
+      startBtn.disabled = true; errEl.textContent = '';
+      try {
+        // Browsers expose the camera only in secure contexts (https:// or
+        // http://localhost). Served over a LAN IP, mediaDevices is undefined.
+        if (!navigator.mediaDevices?.getUserMedia) {
+          const e = new Error('the camera only works on https:// or http://localhost — open this page as localhost on the machine running the server (or use an HTTPS tunnel), not via a LAN IP.');
+          e.name = 'InsecureContextError';
+          throw e;
+        }
+        startBtn.textContent = 'Opening camera...';
+        // Pin the picked camera by deviceId; empty selection falls back to
+        // the front-facing default. If the picked device has vanished (e.g.
+        // unplugged) or can't satisfy the constraints, retry once without it
+        // rather than failing outright.
+        const deviceId = cameraSelect.value || null;
+        const source = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' };
+        const videoConstraints = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, ...source };
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+        } catch (e) {
+          if (deviceId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: 'user' },
+              audio: false
+            });
+          } else {
+            throw e;
+          }
+        }
+        refreshCameras(); // labels are populated now that permission is granted
+        video.srcObject = stream;
+        await new Promise((res, rej) => {
+          video.onloadedmetadata = () => { video.play(); res(); };
+          video.onerror = () => rej(new Error('video failed to load'));
+          setTimeout(() => rej(new Error('camera timed out')), 6000);
+        });
+        if (video.videoWidth && video.videoHeight) ASPECT = video.videoWidth / video.videoHeight;
+
+        MODEL = MODELS[modelSelect.value] || MODELS.lite;
+        startBtn.textContent = 'Loading model...';
+        detector = new PoseDetector({
+          detector: { modelPath: MODEL, runningMode: 'VIDEO', numPoses: 1,
+            minDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5 },
+          performance: { enableGpu: true },
+          coordinates: { normalized: true, pixel: false, world: false }
+        });
+        await detector.initialize();
+
+        // 1-Euro smoothing on the landmarks, seeded from the current panel values.
+        pipeline = new FilterPipeline({
+          filtering: { enabled: FILTER_ON, oneEuroConfig: { minCutoff: FILTER_MINCUTOFF, beta: FILTER_BETA, dCutoff: 1.0 } },
+          performance: { targetFps: 30 }
+        });
+
+        running = true; curtain.classList.add('hidden'); lastTs = performance.now();
+        if (typeof video.requestVideoFrameCallback === 'function') {
+          useRVFC = true;
+          const onCam = () => { if (running) { runDetection(); video.requestVideoFrameCallback(onCam); } };
+          video.requestVideoFrameCallback(onCam);
+        }
+        requestAnimationFrame(gameLoop);
+      } catch (e) {
+        const map = { NotAllowedError: 'Camera permission denied - allow it and retry.',
+          NotFoundError: 'No camera found.', NotReadableError: 'Camera is already in use by another app.' };
+        errEl.textContent = map[e.name] || ('Could not start: ' + e.message);
+        startBtn.disabled = false; startBtn.textContent = 'Start camera & fly';
+        console.error('[Flapper] start failed', e);
+      }
+    }
+
+    // ---- Detection: bank from elbow tilt, lift from synced shoulder flap --
+    function runDetection() {
+      if (!detector || video.readyState < 2) return;
+      let result;
+      try { result = detector.detect(video, performance.now()); }
+      catch (e) { console.error('[Flapper] detect error', e); return; }
+      if (pipeline) result = pipeline.process(result);
+      detFps = result.fps || detFps;
+      if (result.detected && result.pose && result.pose.normalized) {
+        lastPose = result.pose.normalized;
+        updateBank(lastPose);
+        updateFlap(lastPose, performance.now() / 1000);
+      } else { lastPose = null; wingsActive = false; steeringTarget = 0; }
+    }
+
+    function updateBank(n) {
+      // Elbows, not wrists: same "wing line" idea, but you don't need to reach
+      // your hands out to the frame edges to be seen — arms can stay bent.
+      const le = n[L.LELB], re = n[L.RELB];
+      const span = Math.abs(le.x - re.x);
+      wingsActive = le.visibility > VIS_MIN && re.visibility > VIS_MIN && span > WINGS_SPAN;
+      if (!wingsActive) { steeringTarget = 0; return; }
+      const a = { x: 1 - le.x, y: le.y }, b = { x: 1 - re.x, y: re.y };  // mirrored screen space
+      const [p1, p2] = a.x <= b.x ? [a, b] : [b, a];
+      const theta = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      bankTheta = theta;
+      let s = Math.abs(theta) < DEADZONE ? 0 : theta / THETA_MAX;
+      steeringTarget = STEER_SIGN * clamp(s, -1, 1);
+    }
+
+    // aspect-corrected angle (deg) at `vertex` between points a and c
+    function angleDeg(a, vtx, c) {
+      const v1 = { x: (a.x - vtx.x) * ASPECT, y: a.y - vtx.y };
+      const v2 = { x: (c.x - vtx.x) * ASPECT, y: c.y - vtx.y };
+      const m1 = Math.hypot(v1.x, v1.y), m2 = Math.hypot(v2.x, v2.y);
+      if (m1 < 1e-6 || m2 < 1e-6) return null;
+      return Math.acos(clamp((v1.x * v2.x + v1.y * v2.y) / (m1 * m2), -1, 1)) * 57.2958;
+    }
+
+    function updateFlap(n, tSec) {
+      // Drop downstrokes older than the sync window so stale singles can't pair up.
+      if (lastDown.L > 0 && tSec - lastDown.L > SYNC_WINDOW) lastDown.L = 0;
+      if (lastDown.R > 0 && tSec - lastDown.R > SYNC_WINDOW) lastDown.R = 0;
+
+      for (const s of [{ sh: L.LSHO, el: L.LELB, hip: L.LHIP, k: 'L' }, { sh: L.RSHO, el: L.RELB, hip: L.RHIP, k: 'R' }]) {
+        const sh = n[s.sh], el = n[s.el], hip = n[s.hip];
+        if (sh.visibility < VIS_MIN || el.visibility < VIS_MIN || hip.visibility < VIS_MIN) continue;
+        const ang = angleDeg(el, sh, hip);  // shoulder abduction: ~0 arm down, ~90 horizontal, >120 overhead
+        if (ang == null) continue;
+        shAng[s.k] = ang;
+        if (ang > SH_HIGH) armed[s.k] = true;               // wing raised -> armed
+        else if (armed[s.k] && ang < SH_LOW) {              // swept down past low -> downstroke
+          armed[s.k] = false; lastDown[s.k] = tSec;
+        }
+      }
+      // Both wings completed a downstroke within the window -> synced flap -> lift.
+      if (lastDown.L > 0 && lastDown.R > 0) {
+        lastDown.L = 0; lastDown.R = 0;
+        valt += FLAP_IMPULSE; liftCount++; syncFlash = 0.45; flapPulse = 1;
+      }
+    }
+
+    // ---- Game loop -------------------------------------------------------
+    function gameLoop(ts) {
+      if (!running) return;
+      let dt = clamp((ts - lastTs) / 1000, 0, 0.05); lastTs = ts;
+      if (!useRVFC && ts - lastDetectTs > 30) { lastDetectTs = ts; runDetection(); }
+
+      // Sign negated to match drawBird's bank (-steering*0.5), same reasoning
+      // as the plane: travel must track the visual bank direction, not
+      // steering's raw sign directly. See flight-game.html for the writeup.
+      steering += (steeringTarget - steering) * Math.min(1, dt * STEER_SMOOTH);
+      birdX = clamp(birdX - steering * TURN_SPEED * dt, -1, 1);
+
+      // Vertical physics: gravity down, flaps add upward impulse (handled in updateFlap).
+      valt -= GRAVITY * dt;
+      alt += valt * dt;
+      if (alt <= 0) { alt = 0; if (valt < 0) valt = 0; }
+      if (alt >= 1) { alt = 1; if (valt > 0) valt = 0; }
+
+      spawnTimer += dt;
+      if (spawnTimer >= GATE_INTERVAL) { spawnTimer -= GATE_INTERVAL; gates.push({ worldX: Math.random() * 1.0 - 0.5, worldY: 0.25 + Math.random() * 0.6, z: 1, done: false }); }
+      for (const g of gates) {
+        g.z -= GATE_SPEED * dt;
+        if (!g.done && g.z <= 0.015) {
+          g.done = true;
+          const hit = Math.abs(birdX - g.worldX) < GATE_HALF_X && Math.abs(alt - g.worldY) < GATE_HALF_Y;
+          if (hit) { score++; flash('#57d98a'); } else { missed++; flash('#ff6a8a'); }
+        }
+      }
+      gates = gates.filter(g => !g.done);
+      scrollPhase = (scrollPhase + dt * GATE_SPEED) % 1;
+      if (flashT > 0) flashT -= dt;
+      if (flapPulse > 0) flapPulse -= dt * 2.2;
+      if (syncFlash > 0) syncFlash -= dt;
+
+      renderGame(); renderOverlay();
+      requestAnimationFrame(gameLoop);
+    }
+    function flash(c) { flashColor = c; flashT = 0.5; }
+
+    // ---- Pseudo-3D: worldX [-1,1], z [0 near,1 far]; altitude lifts on-screen
+    const HORIZON_Y = H * 0.30, BASE_Y = H * 0.90, HALF_SPREAD = W * 0.46, ALT_PIX = H * 0.52;
+    function project(worldX, z) {
+      const persp = 0.18 + 0.82 * (1 - z);
+      return { x: W / 2 + worldX * HALF_SPREAD * persp, y: BASE_Y + (HORIZON_Y - BASE_Y) * z, scale: persp };
+    }
+
+    // ---- Render game -----------------------------------------------------
+    function renderGame() {
+      const sky = gctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#3a1f5e'); sky.addColorStop(0.45, '#7a3f7e'); sky.addColorStop(0.55, '#221033'); sky.addColorStop(1, '#0a0712');
+      gctx.fillStyle = sky; gctx.fillRect(0, 0, W, H);
+      gctx.fillStyle = 'rgba(255,200,140,0.16)'; gctx.fillRect(0, HORIZON_Y - 2, W, 4);
+
+      gctx.strokeStyle = 'rgba(200,150,255,0.20)'; gctx.lineWidth = 1;
+      for (let i = -6; i <= 6; i++) { const n = project(i / 6, 0), f = project(i / 6, 1); gctx.beginPath(); gctx.moveTo(n.x, n.y); gctx.lineTo(f.x, f.y); gctx.stroke(); }
+      for (let k = 0; k < 7; k++) { const z = (k + scrollPhase) / 7; const y = BASE_Y + (HORIZON_Y - BASE_Y) * z;
+        gctx.strokeStyle = `rgba(200,150,255,${(0.26 * (1 - z)).toFixed(3)})`; gctx.beginPath(); gctx.moveTo(0, y); gctx.lineTo(W, y); gctx.stroke(); }
+
+      for (const g of [...gates].sort((a, b) => b.z - a.z)) {
+        const p = project(g.worldX, g.z);
+        const cy = p.y - g.worldY * ALT_PIX * p.scale;        // lift the ring by its altitude
+        const rx = GATE_HALF_X * HALF_SPREAD * p.scale, ry = GATE_HALF_Y * ALT_PIX * p.scale;
+        const aligned = Math.abs(birdX - g.worldX) < GATE_HALF_X && Math.abs(alt - g.worldY) < GATE_HALF_Y;
+        const col = aligned ? '87,217,138' : '255,184,74';
+        // pole from ground to ring
+        gctx.strokeStyle = `rgba(${col},0.22)`; gctx.lineWidth = Math.max(1, 3 * p.scale);
+        gctx.beginPath(); gctx.moveTo(p.x, p.y); gctx.lineTo(p.x, cy + ry); gctx.stroke();
+        // ring
+        gctx.lineWidth = Math.max(2, 7 * p.scale);
+        gctx.strokeStyle = `rgba(${col},${(0.4 + 0.55 * (1 - g.z)).toFixed(2)})`;
+        gctx.beginPath(); gctx.ellipse(p.x, cy, rx, ry, 0, 0, Math.PI * 2); gctx.stroke();
+      }
+
+      // Bird
+      const bx = W / 2 + birdX * HALF_SPREAD, by = BASE_Y - alt * ALT_PIX;
+      drawBird(bx, by, -steering * 0.5, shAng);
+
+      // HUD
+      gctx.fillStyle = '#f3ecff'; gctx.font = '600 22px Segoe UI, sans-serif'; gctx.textBaseline = 'top';
+      gctx.fillText(`Gates  ${score}`, 18, 16);
+      gctx.fillStyle = '#b09fce'; gctx.font = '500 14px Segoe UI, sans-serif';
+      gctx.fillText(`missed ${missed}`, 20, 44); gctx.fillText(`cam ${Math.round(detFps)} fps`, 20, 64);
+
+      // Altitude bar (right edge)
+      const ax = W - 26, atop = H * 0.18, ah = H * 0.64;
+      gctx.fillStyle = 'rgba(255,255,255,0.10)'; gctx.fillRect(ax, atop, 8, ah);
+      gctx.fillStyle = '#4ad6ff'; gctx.fillRect(ax, atop + ah * (1 - alt), 8, ah * alt);
+
+      // Sync-flap pulse
+      if (syncFlash > 0) {
+        gctx.fillStyle = `rgba(74,214,255,${(syncFlash / 0.45 * 0.5).toFixed(3)})`;
+        gctx.font = '800 26px Segoe UI, sans-serif'; gctx.textAlign = 'center';
+        gctx.fillText('FLAP!', bx, by - 54); gctx.textAlign = 'left';
+      }
+      // Steering indicator
+      const bw = 200, bbx = (W - bw) / 2, bby = H - 24;
+      gctx.fillStyle = 'rgba(255,255,255,0.10)'; gctx.fillRect(bbx, bby, bw, 7);
+      gctx.fillStyle = wingsActive ? '#ffb84a' : '#6b5a86';
+      gctx.beginPath(); gctx.arc(bbx + bw / 2 + steering * (bw / 2 - 6), bby + 3.5, 7, 0, Math.PI * 2); gctx.fill();
+
+      if (!lastPose) {
+        gctx.fillStyle = 'rgba(255,255,255,0.85)'; gctx.font = '600 18px Segoe UI, sans-serif'; gctx.textAlign = 'center';
+        gctx.fillText('Step back so your whole upper body is visible', W / 2, H * 0.16); gctx.textAlign = 'left';
+      }
+
+      if (flashT > 0 && flashColor) {
+        const a = (flashT / 0.5) * 0.35;
+        const vg = gctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+        vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, hexA(flashColor, a));
+        gctx.fillStyle = vg; gctx.fillRect(0, 0, W, H);
+      }
+    }
+
+    function drawBird(x, y, bank, angles) {
+      // Wing elevation mirrors your real arms (avg shoulder angle), with a flap kick.
+      const avg = (angles.L != null && angles.R != null) ? (angles.L + angles.R) / 2 : 60;
+      let wing = clamp((avg - SH_LOW) / (SH_HIGH - SH_LOW), 0, 1);  // 0 down, 1 up
+      wing = clamp(wing - flapPulse * 0.5, -0.2, 1);
+      const lift = -18 * (wing - 0.4);  // wing tip vertical offset
+      gctx.save(); gctx.translate(x, y); gctx.rotate(bank);
+      gctx.strokeStyle = 'rgba(74,214,255,0.9)'; gctx.lineWidth = 2;
+      gctx.fillStyle = '#f3ecff';
+      // wings (chevron whose tips rise/fall with the flap)
+      gctx.beginPath(); gctx.moveTo(-40, 4 + lift); gctx.quadraticCurveTo(-14, -4, 0, 2);
+      gctx.quadraticCurveTo(14, -4, 40, 4 + lift); gctx.lineTo(0, 8); gctx.closePath();
+      gctx.fillStyle = '#d8c8ff'; gctx.fill(); gctx.stroke();
+      // body
+      gctx.beginPath(); gctx.ellipse(0, 6, 7, 12, 0, 0, Math.PI * 2); gctx.fillStyle = '#f3ecff'; gctx.fill(); gctx.stroke();
+      // head
+      gctx.beginPath(); gctx.arc(0, -8, 5, 0, Math.PI * 2); gctx.fill(); gctx.stroke();
+      gctx.restore();
+    }
+
+    // ---- Render overlay (camera + skeleton + shoulder-angle flap state) ---
+    function renderOverlay() {
+      const ow = ov.width, oh = ov.height;
+      octx.save(); octx.translate(ow, 0); octx.scale(-1, 1);
+      if (video.readyState >= 2) octx.drawImage(video, 0, 0, ow, oh); else { octx.fillStyle = '#000'; octx.fillRect(0, 0, ow, oh); }
+      octx.restore();
+
+      if (lastPose) {
+        const pt = (i) => ({ x: (1 - lastPose[i].x) * ow, y: lastPose[i].y * oh });
+        const ls = pt(L.LSHO), rs = pt(L.RSHO), le = pt(L.LELB), re = pt(L.RELB);
+        const lh = pt(L.LHIP), rh = pt(L.RHIP);
+        octx.lineWidth = 2; octx.strokeStyle = 'rgba(255,255,255,0.45)';
+        line(ls, rs); line(ls, lh); line(rs, rh);            // shoulders + torso
+        // upper arms, colored by downstroke arming state
+        octx.lineWidth = 3;
+        octx.strokeStyle = armed.L ? 'rgba(87,217,138,0.95)' : 'rgba(255,184,74,0.9)'; line(ls, le);
+        octx.strokeStyle = armed.R ? 'rgba(87,217,138,0.95)' : 'rgba(255,184,74,0.9)'; line(rs, re);
+        // wing-line (bank axis) -- shoulder-to-elbow reach, not the full arm
+        octx.strokeStyle = wingsActive ? '#ffb84a' : 'rgba(255,184,74,0.7)'; octx.lineWidth = 2; line(le, re);
+        for (const p of [le, re]) { octx.fillStyle = '#fff'; octx.beginPath(); octx.arc(p.x, p.y, 3, 0, Math.PI * 2); octx.fill(); }
+      }
+      octx.font = '600 12px Segoe UI, sans-serif'; octx.textBaseline = 'bottom';
+      const sL = shAng.L == null ? '--' : shAng.L.toFixed(0), sR = shAng.R == null ? '--' : shAng.R.toFixed(0);
+      octx.fillStyle = syncFlash > 0 ? '#4ad6ff' : '#b09fce';
+      octx.fillText(syncFlash > 0 ? 'SYNC FLAP' : `shoulders L ${sL}  R ${sR}`, 8, oh - 6);
+    }
+    function line(a, b) { octx.beginPath(); octx.moveTo(a.x, a.y); octx.lineTo(b.x, b.y); octx.stroke(); }
+
+    function hexA(hex, a) { const n = parseInt(hex.replace('#', ''), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a.toFixed(3)})`; }
+
+    window.__gameBooted = true; // boot canary — see the classic script above
+  </script>
+</body>
+</html>

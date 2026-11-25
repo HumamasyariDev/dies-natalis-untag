@@ -1,0 +1,83 @@
+.hero-word {
+  font-family: 'Archivo Black', 'Plus Jakarta Sans', sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+  -webkit-text-stroke: 2.5px var(--ink);
+  text-shadow: 4px 4px 0 var(--ink);
+  display: block;
+}
+
+.hero-word-blue {
+  color: #ef4444;
+  transform: rotate(-1.2deg);
+  animation: heroBob 4s ease-in-out infinite alternate;
+}
+
+.hero-word-yellow {
+  color: #fbbf24;
+  transform: rotate(0.8deg);
+  animation: heroBob 4s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes heroBob {
+  0%   { translate: 0 0; }
+  100% { translate: 0 -4px; }
+}
+
+.stamp-circle {
+  width: 96px;
+  height: 96px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  transform: rotate(8deg);
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+.stamp-circle:hover {
+  transform: rotate(0deg) scale(1.08);
+  box-shadow: 6px 6px 0 var(--ink);
+  background: var(--sun);
+}
+
+.untag-emblem-glow {
+  filter: drop-shadow(0 4px 16px rgba(245, 158, 11, 0.55)) drop-shadow(2px 3px 0 var(--ink));
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.2s ease;
+  animation: emblemFloat 3.5s ease-in-out infinite alternate;
+}
+.untag-emblem-glow:hover {
+  transform: scale(1.08) rotate(-2deg);
+  filter: drop-shadow(0 6px 24px rgba(239, 68, 68, 0.65)) drop-shadow(3px 4px 0 var(--ink));
+}
+
+@keyframes emblemFloat {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-5px); }
+}
+
+.cute-float {
+  display: inline-block;
+  animation: cuteFloat 2.8s ease-in-out infinite alternate;
+}
+@keyframes cuteFloat {
+  0%   { transform: translateY(0) rotate(-12deg) scale(1); }
+  100% { transform: translateY(-7px) rotate(12deg) scale(1.2); }
+}
+
+.lobby-pipeline-card {
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  border-radius: 0.85rem;
+  box-shadow: 3.5px 3.5px 0 var(--ink);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.18s ease;
+}
+.lobby-pipeline-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 5.5px 5.5px 0 var(--ink);
+}
