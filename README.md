@@ -93,3 +93,4 @@ Secara default server berjalan pada `http://localhost:3000` (atau buka `index.ht
 ## Lisensi
 
 MIT License — **Dies Natalis UNTAG Surabaya 2026**
+
